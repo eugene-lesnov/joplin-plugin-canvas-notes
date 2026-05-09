@@ -1,0 +1,97 @@
+/**
+ * Typed message contract between the Canvas Editor backend (Node)
+ * and the WebView (browser). Both sides import this file.
+ *
+ * Each message has a unique `type` that acts as a discriminator.
+ */
+
+import { CanvasDocument, CanvasElement } from '../canvas/canvasTypes';
+
+// ---- backend -> webview ----------------------------------------------------
+
+export interface LoadCanvasMessage {
+	type: 'loadCanvas';
+	noteId: string;
+	resourceId: string;
+	doc: CanvasDocument;
+}
+
+export interface ErrorMessage {
+	type: 'error';
+	message: string;
+}
+
+export type BackendToWebview = LoadCanvasMessage | ErrorMessage;
+
+// ---- webview -> backend ----------------------------------------------------
+
+export interface ReadyMessage {
+	type: 'ready';
+}
+
+export interface SaveCanvasMessage {
+	type: 'saveCanvas';
+	doc: CanvasDocument;
+}
+
+export interface OpenLinkedNoteMessage {
+	type: 'openLinkedNote';
+	noteId: string;
+}
+
+export interface SearchNotesMessage {
+	type: 'searchNotes';
+	query: string;
+}
+
+export interface AddElementMessage {
+	type: 'addElement';
+	element: CanvasElement;
+}
+
+/** Asks backend to verify that the given note ids still exist. */
+export interface CheckLinkedNotesMessage {
+	type: 'checkLinkedNotes';
+	noteIds: string[];
+}
+
+export type WebviewToBackend =
+	| ReadyMessage
+	| SaveCanvasMessage
+	| OpenLinkedNoteMessage
+	| SearchNotesMessage
+	| AddElementMessage
+	| CheckLinkedNotesMessage;
+
+// ---- response shapes -------------------------------------------------------
+
+/** Generic ack-or-error response returned from backend message handler. */
+export interface OperationResult {
+	ok: boolean;
+	error?: string;
+}
+
+export interface NoteSearchHit {
+	id: string;
+	title: string;
+	isTodo: boolean;
+	todoCompleted: boolean;
+	preview: string;
+}
+
+export interface SearchNotesResponse extends OperationResult {
+	items: NoteSearchHit[];
+}
+
+export interface NoteLinkStatus {
+	id: string;
+	exists: boolean;
+	title?: string;
+	isTodo?: boolean;
+	todoCompleted?: boolean;
+	preview?: string;
+}
+
+export interface CheckLinkedNotesResponse extends OperationResult {
+	statuses: NoteLinkStatus[];
+}

@@ -1,0 +1,403 @@
+/* eslint-disable no-undef */
+/**
+ * Canvas renderer for the WebView.
+ *
+ * Pure-DOM module. Has no knowledge of tools, selection logic or
+ * messaging. Exposes itself via `window.CanvasNotes.Renderer`.
+ *
+ * Geometry must mirror src/canvas/svgSerializer.ts so the in-app view
+ * stays visually identical to the saved SVG.
+ *
+ * Splits responsibilities between sibling helpers:
+ *   - CanvasNotes.Geometry  - bbox, hit-test, distance helpers
+ *   - CanvasNotes.Handles   - selection / canvas-resize handles
+ *   - CanvasNotes.TextWrap  - greedy word-wrap for card previews
+ */
+
+(function () {
+	'use strict';
+
+	const Geometry = window.CanvasNotes && window.CanvasNotes.Geometry;
+	const Handles = window.CanvasNotes && window.CanvasNotes.Handles;
+	const TextWrap = window.CanvasNotes && window.CanvasNotes.TextWrap;
+
+	const SVG_NS = 'http://www.w3.org/2000/svg';
+	const ARROWHEAD_ID = 'canvas-arrowhead';
+	const SELECTION_LAYER_ID = 'selection-overlay';
+	const ELEMENTS_LAYER_ID = 'elements-layer';
+
+	// Card geometry - keep in sync with src/canvas/svgConstants.ts
+	const CARD_TITLE_HEIGHT = 28;
+	const CARD_TITLE_PAD_X = 10;
+	const CARD_BODY_LINE_HEIGHT = 14;
+	const CARD_PREVIEW_CHAR_WIDTH = 6;
+	const CARD_PREVIEW_MIN_CHARS = 8;
+
+	// ---- defs / layers ----------------------------------------------------
+
+	function buildDefs() {
+		const defs = document.createElementNS(SVG_NS, 'defs');
+		defs.innerHTML =
+			`<marker id="${ARROWHEAD_ID}" viewBox="0 0 10 10" refX="9" refY="5" ` +
+			`markerWidth="8" markerHeight="8" orient="auto-start-reverse">` +
+			`<path d="M 0 0 L 10 5 L 0 10 z" fill="context-stroke"/></marker>`;
+		return defs;
+	}
+
+	// ---- attribute helpers ------------------------------------------------
+
+	function setAttrs(node, attrs) {
+		for (const [name, value] of Object.entries(attrs)) {
+			node.setAttribute(name, String(value));
+		}
+		return node;
+	}
+
+	function el(name, attrs) {
+		const node = document.createElementNS(SVG_NS, name);
+		if (attrs) setAttrs(node, attrs);
+		return node;
+	}
+
+	function setShapeStyle(node, e) {
+		setAttrs(node, {
+			fill: e.fill,
+			stroke: e.stroke,
+			'stroke-width': e.strokeWidth,
+		});
+	}
+
+	// ---- per-element renderers --------------------------------------------
+
+	function renderRectLike(e) {
+		const w = e.type === 'square' ? e.size : e.w;
+		const h = e.type === 'square' ? e.size : e.h;
+		const node = el('rect', { x: e.x, y: e.y, width: w, height: h });
+		if (e.rx !== undefined) node.setAttribute('rx', String(e.rx));
+		setShapeStyle(node, e);
+		return node;
+	}
+
+	function renderCircle(e) {
+		const node = el('circle', { cx: e.cx, cy: e.cy, r: e.r });
+		setShapeStyle(node, e);
+		return node;
+	}
+
+	function renderEllipse(e) {
+		const node = el('ellipse', { cx: e.cx, cy: e.cy, rx: e.rx, ry: e.ry });
+		setShapeStyle(node, e);
+		return node;
+	}
+
+	function renderSegment(e, withArrow) {
+		const node = el('line', {
+			x1: e.from.x, y1: e.from.y,
+			x2: e.to.x,   y2: e.to.y,
+			stroke: e.stroke,
+			'stroke-width': e.strokeWidth,
+		});
+		if (withArrow) node.setAttribute('marker-end', `url(#${ARROWHEAD_ID})`);
+		else node.setAttribute('stroke-linecap', 'round');
+		return node;
+	}
+
+	function freehandPathData(points) {
+		if (!points || !points.length) return '';
+		let d = '';
+		for (let i = 0; i < points.length; i++) {
+			const p = points[i];
+			d += (i === 0 ? 'M' : 'L') + p.x + ' ' + p.y + ' ';
+		}
+		return d.trimEnd();
+	}
+
+	function renderFreehand(e) {
+		return el('path', {
+			d: freehandPathData(e.points),
+			fill: 'none',
+			stroke: e.stroke,
+			'stroke-width': e.strokeWidth,
+			'stroke-linecap': 'round',
+			'stroke-linejoin': 'round',
+		});
+	}
+
+	function cardTitleColor(e) {
+		if (e.broken) return '#b00020';
+		if (e.type === 'todoCard') return e.completed ? '#7ab87a' : '#e2a64a';
+		return '#4a90e2';
+	}
+
+	function renderCard(e) {
+		const g = el('g');
+
+		const body = el('rect', {
+			x: e.x, y: e.y, width: e.w, height: e.h, rx: 6,
+			fill: e.broken ? '#fff4f5' : '#ffffff',
+			stroke: e.broken ? '#b00020' : '#cccccc',
+			'stroke-width': 1,
+		});
+		if (e.broken) body.setAttribute('stroke-dasharray', '5 3');
+		g.appendChild(body);
+
+		g.appendChild(el('rect', {
+			x: e.x, y: e.y, width: e.w, height: CARD_TITLE_HEIGHT, rx: 6,
+			fill: cardTitleColor(e),
+		}));
+
+		const title = el('text', {
+			x: e.x + CARD_TITLE_PAD_X,
+			y: e.y + CARD_TITLE_HEIGHT / 2 + 5,
+			'font-size': 14,
+			'font-family': 'sans-serif',
+			fill: '#ffffff',
+		});
+		title.textContent = e.title || '(untitled)';
+		g.appendChild(title);
+
+		let cursorY = e.y + CARD_TITLE_HEIGHT + CARD_BODY_LINE_HEIGHT;
+
+		if (e.type === 'todoCard') {
+			const status = el('text', {
+				x: e.x + CARD_TITLE_PAD_X, y: cursorY,
+				'font-size': 12, 'font-family': 'sans-serif', fill: '#666666',
+			});
+			status.textContent = e.completed ? '[x] done' : '[ ] todo';
+			g.appendChild(status);
+			cursorY += 16;
+		}
+
+		if (e.preview) {
+			const footerSpace = e.broken ? 22 : 8;
+			const availableHeight = e.y + e.h - cursorY - footerSpace;
+			const maxLines = Math.max(0, Math.floor(availableHeight / CARD_BODY_LINE_HEIGHT));
+			if (maxLines > 0) appendPreview(g, e, cursorY, maxLines);
+		}
+
+		if (e.broken) {
+			const note = el('text', {
+				x: e.x + CARD_TITLE_PAD_X, y: e.y + e.h - 10,
+				'font-size': 11, 'font-family': 'sans-serif', fill: '#b00020',
+			});
+			note.textContent = 'broken link';
+			g.appendChild(note);
+		}
+
+		return g;
+	}
+
+	/**
+	 * Wraps preview text into N visible lines that fit horizontally inside
+	 * the card. Greedy word-wrap with character-level fallback for very
+	 * long words. The last line is suffixed with an ellipsis if truncated.
+	 */
+	function appendPreview(g, e, startY, maxLines) {
+		const padX = CARD_TITLE_PAD_X;
+		const maxChars = Math.max(
+			CARD_PREVIEW_MIN_CHARS,
+			Math.floor((e.w - padX * 2) / CARD_PREVIEW_CHAR_WIDTH),
+		);
+		const lines = TextWrap.wrapText(e.preview, maxChars, maxLines);
+		if (lines.length === 0) return;
+
+		const text = el('text', {
+			x: e.x + padX, y: startY,
+			'font-size': 12, 'font-family': 'sans-serif', fill: '#666666',
+		});
+		lines.forEach((line, idx) => {
+			const tspan = el('tspan', { x: e.x + padX });
+			if (idx > 0) tspan.setAttribute('dy', String(CARD_BODY_LINE_HEIGHT));
+			tspan.textContent = line;
+			text.appendChild(tspan);
+		});
+		g.appendChild(text);
+	}
+
+	/**
+	 * Renders a plain text element with greedy word wrap by element.width.
+	 * Empty text is not rendered. Long single tokens are broken at the
+	 * character boundary. Empty lines stay as vertical spacers.
+	 */
+	function renderText(e) {
+		if (!e.text) return null;
+		const fontSize = e.fontSize || 16;
+		const lineHeight = fontSize * 1.2;
+		const baselineY = e.y + fontSize;
+
+		const text = el('text', {
+			x: e.x,
+			y: baselineY,
+			'font-size': fontSize,
+			'font-family': 'sans-serif',
+			fill: '#222222',
+		});
+
+		const maxChars = TextWrap.charsPerWidth(e.width, fontSize);
+		const lines = TextWrap.wrapByWidth(e.text, maxChars);
+		lines.forEach((line, idx) => {
+			const tspan = el('tspan', { x: e.x });
+			if (idx > 0) tspan.setAttribute('dy', String(lineHeight));
+			tspan.setAttribute('xml:space', 'preserve');
+			// SVG hides empty <tspan> entirely (no vertical advance), so use a
+			// zero-width space to force a real empty line.
+			tspan.textContent = line.length === 0 ? '\u200b' : line;
+			text.appendChild(tspan);
+		});
+		return text;
+	}
+
+	function renderElement(e) {
+		switch (e.type) {
+			case 'rectangle':
+			case 'square':    return renderRectLike(e);
+			case 'circle':    return renderCircle(e);
+			case 'ellipse':   return renderEllipse(e);
+			case 'arrow':     return renderSegment(e, true);
+			case 'line':      return renderSegment(e, false);
+			case 'freehand':  return renderFreehand(e);
+			case 'noteCard':
+			case 'todoCard':  return renderCard(e);
+			case 'text':      return renderText(e);
+			default:          return null;
+		}
+	}
+
+	// ---- public entry: render full document -------------------------------
+
+	/**
+	 * Replaces the SVG content with elements rendered from the document.
+	 * Each rendered node receives `data-element-id`. Selection lives in a
+	 * separate top-most layer so it can be redrawn cheaply.
+	 */
+	function renderDocument(svg, doc, selectedId) {
+		while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+		setAttrs(svg, {
+			viewBox: `0 0 ${doc.width} ${doc.height}`,
+			width: doc.width,
+			height: doc.height,
+		});
+
+		svg.appendChild(buildDefs());
+
+		const bg = el('rect', {
+			x: 0, y: 0,
+			width: doc.width, height: doc.height,
+			fill: doc.background || '#ffffff',
+			'data-canvas-bg': '1',
+		});
+		svg.appendChild(bg);
+
+		const layer = el('g', { id: ELEMENTS_LAYER_ID });
+		svg.appendChild(layer);
+
+		const sorted = (doc.elements || []).slice().sort((a, b) => a.z - b.z);
+		for (const item of sorted) {
+			const node = renderElement(item);
+			if (!node) continue;
+			node.setAttribute('data-element-id', item.id);
+			layer.appendChild(node);
+		}
+
+		const overlay = el('g', { id: SELECTION_LAYER_ID });
+		svg.appendChild(overlay);
+
+		drawSelection(svg, doc, selectedId);
+	}
+
+	/** Repaints the selection overlay only; full render is not required. */
+	function drawSelection(svg, doc, selectedId) {
+		const overlay = svg.querySelector(`#${SELECTION_LAYER_ID}`);
+		if (!overlay) return;
+		while (overlay.firstChild) overlay.removeChild(overlay.firstChild);
+
+		drawCanvasHandles(overlay, doc);
+
+		if (!selectedId) return;
+		const item = (doc.elements || []).find((e) => e.id === selectedId);
+		if (!item) return;
+
+		// Outline (skip for thin lines/arrows where it looks bad).
+		const isThin = item.type === 'arrow' || item.type === 'line';
+		if (!isThin) {
+			const b = Geometry.elementBBox(item);
+			if (item.type === 'freehand' && (b.w === 0 || b.h === 0)) {
+				// freehand can collapse to a single point; just skip the outline.
+			} else {
+				const pad = item.type === 'freehand' ? 4 : 0;
+				overlay.appendChild(el('rect', {
+					x: b.x - pad, y: b.y - pad,
+					width: b.w + pad * 2, height: b.h + pad * 2,
+					class: 'selection-outline',
+				}));
+			}
+		}
+
+		drawElementHandles(overlay, item);
+	}
+
+	function drawElementHandles(overlay, item) {
+		const handles = Handles.getElementHandles(item);
+		const size = Handles.HANDLE_SIZE;
+		for (const h of handles) {
+			const sq = el('rect', {
+				x: h.x - size / 2, y: h.y - size / 2,
+				width: size, height: size,
+				class: 'selection-handle',
+				'data-handle': h.name,
+				style: `cursor:${h.cursor}`,
+			});
+			overlay.appendChild(sq);
+		}
+	}
+
+	function drawCanvasHandles(overlay, doc) {
+		const items = Handles.getCanvasHandles(doc);
+		const size = Handles.HANDLE_SIZE;
+		for (const h of items) {
+			const sq = el('rect', {
+				x: h.x - size / 2, y: h.y - size / 2,
+				width: size, height: size,
+				class: 'canvas-handle',
+				'data-canvas-handle': h.name,
+				style: `cursor:${h.cursor}`,
+			});
+			overlay.appendChild(sq);
+		}
+	}
+
+	/**
+	 * Measures the rendered bbox of the SVG node for the given element id.
+	 * Returns {x, y, w, h} in document space, or null on missing/zero-sized
+	 * nodes. Useful for pixel-perfect post-render adjustments.
+	 */
+	function measureElementBBox(svgRoot, elementId) {
+		if (!svgRoot || !elementId) return null;
+		const target = svgRoot.querySelector(
+			`[data-element-id="${String(elementId).replace(/[\"\\]/g, '\\$&')}"]`,
+		);
+		if (!target || typeof target.getBBox !== 'function') return null;
+		try {
+			const b = target.getBBox();
+			if (!b || !Number.isFinite(b.width) || !Number.isFinite(b.height)) return null;
+			return { x: b.x, y: b.y, w: b.width, h: b.height };
+		} catch (_) {
+			return null;
+		}
+	}
+
+	window.CanvasNotes = window.CanvasNotes || {};
+	window.CanvasNotes.Renderer = {
+		SVG_NS,
+		renderDocument,
+		drawSelection,
+		// Geometry helpers re-exported for backwards compatibility with
+		// existing canvasEditor.js callers.
+		elementBBox: Geometry ? Geometry.elementBBox : null,
+		hitTest: Geometry ? Geometry.hitTest : null,
+		pickHandleAt: Handles ? Handles.pickElementHandleAt : null,
+		pickCanvasHandleAt: Handles ? Handles.pickCanvasHandleAt : null,
+		measureElementBBox,
+	};
+})();

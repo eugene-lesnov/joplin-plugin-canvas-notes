@@ -1,0 +1,96 @@
+/* eslint-disable no-undef */
+/**
+ * Toolbar UI for the Canvas Editor webview.
+ *
+ * Builds icon-only tool buttons (with a tooltip for accessibility),
+ * tracks the active tool and notifies the editor via callback.
+ *
+ * Icons are inline SVG strings - no asset files, no font dependencies,
+ * no network calls. Each icon is a 16x16 viewBox shape.
+ *
+ * Exposed as global CanvasNotes.Toolbar.
+ */
+
+(function () {
+	'use strict';
+
+	const ICON_SELECT =
+		`<svg viewBox="0 0 16 16" aria-hidden="true">` +
+			`<path d="M3 2 L13 8 L8 9 L11 14 L9 15 L6 10 L3 13 Z"/>` +
+		`</svg>`;
+	const ICON_SQUARE =
+		`<svg viewBox="0 0 16 16" aria-hidden="true">` +
+			`<rect x="3.5" y="3.5" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1.5"/>` +
+		`</svg>`;
+	const ICON_CIRCLE =
+		`<svg viewBox="0 0 16 16" aria-hidden="true">` +
+			`<circle cx="8" cy="8" r="5" fill="none" stroke="currentColor" stroke-width="1.5"/>` +
+		`</svg>`;
+	const ICON_ARROW =
+		`<svg viewBox="0 0 16 16" aria-hidden="true">` +
+			`<path d="M2 13 L13 3 M13 3 L8 3 M13 3 L13 8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>` +
+		`</svg>`;
+	const ICON_LINE =
+		`<svg viewBox="0 0 16 16" aria-hidden="true">` +
+			`<path d="M2 13 L14 3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>` +
+		`</svg>`;
+	// Wavy/squiggly stroke that reads as a freehand line.
+	const ICON_PEN =
+		`<svg viewBox="0 0 16 16" aria-hidden="true">` +
+			`<path d="M1.5 11 Q 4 6, 6 8 T 10 8 T 14.5 5" ` +
+			`fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>` +
+		`</svg>`;
+	// Stylized capital "T" so the tool reads as a text-insertion tool.
+	const ICON_TEXT =
+		`<svg viewBox="0 0 16 16" aria-hidden="true">` +
+			`<path d="M3 3 H13 M8 3 V13" ` +
+			`fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>` +
+		`</svg>`;
+
+	const TOOLS = [
+		{ id: 'select', label: 'Select', icon: ICON_SELECT },
+		{ id: 'square', label: 'Square', icon: ICON_SQUARE },
+		{ id: 'circle', label: 'Circle', icon: ICON_CIRCLE },
+		{ id: 'line',   label: 'Line',   icon: ICON_LINE },
+		{ id: 'arrow',  label: 'Arrow',  icon: ICON_ARROW },
+		{ id: 'pen',    label: 'Pen',    icon: ICON_PEN },
+		{ id: 'text',   label: 'Text',   icon: ICON_TEXT },
+	];
+
+	const DEFAULT_TOOL = 'select';
+
+	function mount(host, onToolChange) {
+		host.innerHTML = '';
+		const buttons = new Map();
+		let active = DEFAULT_TOOL;
+
+		for (const tool of TOOLS) {
+			const btn = document.createElement('button');
+			btn.type = 'button';
+			btn.className = 'tool-btn icon-btn';
+			btn.dataset.tool = tool.id;
+			btn.title = tool.label;
+			btn.setAttribute('aria-label', tool.label);
+			btn.innerHTML = tool.icon;
+			btn.addEventListener('click', () => setActive(tool.id));
+			host.appendChild(btn);
+			buttons.set(tool.id, btn);
+		}
+
+		function setActive(id) {
+			if (!buttons.has(id)) return;
+			active = id;
+			for (const [tid, btn] of buttons.entries()) {
+				btn.classList.toggle('active', tid === id);
+			}
+			if (typeof onToolChange === 'function') onToolChange(id);
+		}
+
+		setActive(active);
+
+		return { getActive: () => active, setActive };
+	}
+
+	window.CanvasNotes = window.CanvasNotes || {};
+	window.CanvasNotes.Toolbar = { TOOLS, DEFAULT_TOOL, mount };
+})();
