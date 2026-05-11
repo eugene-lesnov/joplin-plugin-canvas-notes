@@ -41,10 +41,17 @@
 		`</svg>`;
 	// Wavy/squiggly stroke that reads as a freehand line.
 	const ICON_PEN =
-		`<svg viewBox="0 0 16 16" aria-hidden="true">` +
-			`<path d="M1.5 11 Q 4 6, 6 8 T 10 8 T 14.5 5" ` +
-			`fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>` +
-		`</svg>`;
+    	`<svg viewBox="0 0 16 16" aria-hidden="true">` +
+    		`<path d="M2 11.5 ` +
+    			`C3.2 7.2, 5.1 6.8, 6.4 9.2 ` +
+    			`S9.1 12.1, 10.1 8.6 ` +
+    			`S12.2 3.9, 14 5.2" ` +
+    			`fill="none" ` +
+    			`stroke="currentColor" ` +
+    			`stroke-width="1.6" ` +
+    			`stroke-linecap="round" ` +
+    			`stroke-linejoin="round"/>` +
+    	`</svg>`;
 	// Stylized capital "T" so the tool reads as a text-insertion tool.
 	const ICON_TEXT =
 		`<svg viewBox="0 0 16 16" aria-hidden="true">` +
