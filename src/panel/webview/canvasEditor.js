@@ -494,13 +494,18 @@
 			return;
 		}
 
-		switch (activeTool) {
-			case 'square':
-				addElement(Factories.makeRectangle(p, nextZ()));
-				break;
-			case 'circle':
-				addElement(Factories.makeEllipse(p, nextZ()));
-				break;
+		if (activeTool === 'square' || activeTool === 'circle') {
+			// Drag-create gesture: a small drag (or plain click) yields a
+			// default-sized shape centered on the click point; a real drag
+			// produces a shape that exactly fills the user-drawn box.
+			dragState = {
+				mode: 'shape-creating',
+				kind: activeTool,
+				start: p,
+				current: p,
+				startClientX: evt.clientX,
+				startClientY: evt.clientY,
+			};
 		}
 	}
 
@@ -670,6 +675,10 @@
 				dragState.current = p;
 				TempPreview.showRect(svg(), dragState.start, p);
 				return;
+			case 'shape-creating':
+				dragState.current = p;
+				TempPreview.showShape(svg(), dragState.kind, dragState.start, p);
+				return;
 		}
 	}
 
@@ -716,6 +725,56 @@
 				TempPreview.clearRect(svg());
 				finishTextCreate(finished);
 				return;
+			}
+			case 'shape-creating': {
+				TempPreview.clearShape(svg());
+				finishShapeCreate(finished);
+				return;
+			}
+		}
+	}
+
+	/**
+	 * Materializes the drag-created rectangle/ellipse. A drag larger than
+	 * the min threshold along both axes uses the user-drawn bounds; a
+	 * smaller drag or plain click falls back to a default-sized shape
+	 * centered on the click point. This mirrors the text-create UX so
+	 * single clicks remain useful.
+	 */
+	function finishShapeCreate(state) {
+		const from = state.start;
+		const to = state.current;
+		const rawW = Math.abs(to.x - from.x);
+		const rawH = Math.abs(to.y - from.y);
+
+		const hasDraggedSize = rawW >= C.SHAPE_DRAG_MIN_SIZE && rawH >= C.SHAPE_DRAG_MIN_SIZE;
+
+		if (state.kind === 'square') {
+			if (hasDraggedSize) {
+				const bounds = {
+					x: Math.min(from.x, to.x),
+					y: Math.min(from.y, to.y),
+					width: rawW,
+					height: rawH,
+				};
+				addElement(Factories.makeRectangleFromBounds(bounds, nextZ()));
+			} else {
+				addElement(Factories.makeRectangle(from, nextZ()));
+			}
+			return;
+		}
+
+		if (state.kind === 'circle') {
+			if (hasDraggedSize) {
+				const bounds = {
+					x: Math.min(from.x, to.x),
+					y: Math.min(from.y, to.y),
+					width: rawW,
+					height: rawH,
+				};
+				addElement(Factories.makeEllipseFromBounds(bounds, nextZ()));
+			} else {
+				addElement(Factories.makeEllipse(from, nextZ()));
 			}
 		}
 	}

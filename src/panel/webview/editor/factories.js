@@ -25,12 +25,27 @@
 	/**
 	 * Square tool creates a free-form rectangle (model type 'rectangle')
 	 * so it can be stretched along either axis from any handle.
+	 * The click flavor centers a default-sized box on the click point.
 	 */
 	function makeRectangle(p, nextZ) {
 		return {
 			id: newId(), type: 'rectangle', z: nextZ,
 			x: p.x - C.DEFAULT_SQUARE / 2, y: p.y - C.DEFAULT_SQUARE / 2,
 			w: C.DEFAULT_SQUARE, h: C.DEFAULT_SQUARE,
+			fill: C.DEFAULT_FILL, stroke: C.DEFAULT_STROKE, strokeWidth: C.DEFAULT_STROKE_WIDTH,
+		};
+	}
+
+	/**
+	 * Drag-create flavor of the rectangle: bounds are passed in directly
+	 * so the user-drawn box becomes the initial size. The caller is
+	 * expected to normalize {x, y, width, height} (no negatives).
+	 */
+	function makeRectangleFromBounds(bounds, nextZ) {
+		return {
+			id: newId(), type: 'rectangle', z: nextZ,
+			x: bounds.x, y: bounds.y,
+			w: bounds.width, h: bounds.height,
 			fill: C.DEFAULT_FILL, stroke: C.DEFAULT_STROKE, strokeWidth: C.DEFAULT_STROKE_WIDTH,
 		};
 	}
@@ -43,6 +58,20 @@
 		return {
 			id: newId(), type: 'ellipse', z: nextZ,
 			cx: p.x, cy: p.y, rx: C.DEFAULT_CIRCLE_R, ry: C.DEFAULT_CIRCLE_R,
+			fill: C.DEFAULT_FILL, stroke: C.DEFAULT_STROKE, strokeWidth: C.DEFAULT_STROKE_WIDTH,
+		};
+	}
+
+	/**
+	 * Drag-create flavor of the ellipse: derived from a bounding box,
+	 * matching how SVG <ellipse> is positioned (center + radii).
+	 */
+	function makeEllipseFromBounds(bounds, nextZ) {
+		const rx = bounds.width / 2;
+		const ry = bounds.height / 2;
+		return {
+			id: newId(), type: 'ellipse', z: nextZ,
+			cx: bounds.x + rx, cy: bounds.y + ry, rx, ry,
 			fill: C.DEFAULT_FILL, stroke: C.DEFAULT_STROKE, strokeWidth: C.DEFAULT_STROKE_WIDTH,
 		};
 	}
@@ -112,7 +141,9 @@
 	window.CanvasNotes.EditorFactories = {
 		newId,
 		makeRectangle,
+		makeRectangleFromBounds,
 		makeEllipse,
+		makeEllipseFromBounds,
 		makeArrow: (from, to, z) => makeSegment('arrow', from, to, z),
 		makeLine:  (from, to, z) => makeSegment('line',  from, to, z),
 		makeFreehand,

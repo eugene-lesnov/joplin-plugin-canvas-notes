@@ -16,6 +16,7 @@
 	const SEGMENT_ID = 'temp-segment';
 	const PEN_ID = 'temp-pen';
 	const RECT_ID = 'temp-rect';
+	const SHAPE_ID = 'temp-shape';
 
 	function getOverlay(svg) {
 		return svg ? svg.querySelector('#selection-overlay') : null;
@@ -117,6 +118,55 @@
 		if (overlay) removeChild(overlay, RECT_ID);
 	}
 
+	/**
+	 * Renders a live preview of a rectangle/ellipse being drag-created.
+	 * Uses the same fill/stroke as the final shape so the user sees what
+	 * they are about to insert. The kind switch swaps the underlying SVG
+	 * primitive in place to avoid flicker when the user changes tools.
+	 */
+	function showShape(svg, kind, from, to) {
+		const overlay = getOverlay(svg);
+		if (!overlay) return;
+		const x = Math.min(from.x, to.x);
+		const y = Math.min(from.y, to.y);
+		const w = Math.abs(to.x - from.x);
+		const h = Math.abs(to.y - from.y);
+
+		const tag = kind === 'circle' ? 'ellipse' : 'rect';
+		let node = overlay.querySelector(`#${SHAPE_ID}`);
+		if (node && node.tagName.toLowerCase() !== tag) {
+			overlay.removeChild(node);
+			node = null;
+		}
+		if (!node) {
+			node = document.createElementNS(Renderer.SVG_NS, tag);
+			node.setAttribute('id', SHAPE_ID);
+			node.setAttribute('fill', C.DEFAULT_FILL);
+			node.setAttribute('fill-opacity', '0.5');
+			node.setAttribute('stroke', C.DEFAULT_STROKE);
+			node.setAttribute('stroke-width', String(C.DEFAULT_STROKE_WIDTH));
+			node.setAttribute('stroke-dasharray', '4 3');
+			node.setAttribute('pointer-events', 'none');
+			overlay.appendChild(node);
+		}
+		if (kind === 'circle') {
+			node.setAttribute('cx', String(x + w / 2));
+			node.setAttribute('cy', String(y + h / 2));
+			node.setAttribute('rx', String(w / 2));
+			node.setAttribute('ry', String(h / 2));
+		} else {
+			node.setAttribute('x', String(x));
+			node.setAttribute('y', String(y));
+			node.setAttribute('width', String(w));
+			node.setAttribute('height', String(h));
+		}
+	}
+
+	function clearShape(svg) {
+		const overlay = getOverlay(svg);
+		if (overlay) removeChild(overlay, SHAPE_ID);
+	}
+
 	window.CanvasNotes = window.CanvasNotes || {};
 	window.CanvasNotes.EditorTempPreview = {
 		showSegment,
@@ -125,5 +175,7 @@
 		clearFreehand,
 		showRect,
 		clearRect,
+		showShape,
+		clearShape,
 	};
 })();

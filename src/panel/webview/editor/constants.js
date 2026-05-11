@@ -41,6 +41,14 @@
 		MIN_CANVAS_SIZE: 100,
 
 		/**
+		 * Minimum drag distance (in document pixels) along each axis that
+		 * promotes a shape drag-create to a custom-sized box. Smaller
+		 * gestures (incl. a plain click) fall back to default sized shape
+		 * anchored at the click point.
+		 */
+		SHAPE_DRAG_MIN_SIZE: 8,
+
+		/**
 		 * Tools that should KEEP being active after creating an element.
 		 * Drawing tools are typically used to make several strokes in a row;
 		 * switching back to Select would be annoying.
