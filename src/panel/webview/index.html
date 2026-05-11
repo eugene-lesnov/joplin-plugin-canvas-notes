@@ -2,33 +2,33 @@
 <html lang="en">
 <head>
 	<meta charset="UTF-8" />
-	<title>Canvas Editor</title>
+	<title data-i18n="documentTitle">Canvas Editor</title>
 </head>
 <body>
 	<div id="canvas-editor-root">
 		<div id="canvas-toolbar" class="toolbar">
-			<span class="toolbar-title">Canvas Notes</span>
+			<span class="toolbar-title" data-i18n="toolbarTitle">Canvas Notes</span>
 
 			<div class="toolbar-tools" data-role="tools">
 				<!-- tool buttons are injected by toolbar.js -->
 			</div>
 
-			<button id="btn-add-note" type="button" class="toolbar-btn">Add note/task</button>
-			<button id="btn-delete" type="button" class="toolbar-btn toolbar-btn-secondary" disabled>Delete</button>
+			<button id="btn-add-note" type="button" class="toolbar-btn" data-i18n="btnAddNote">Add note/task</button>
+			<button id="btn-delete" type="button" class="toolbar-btn toolbar-btn-secondary" disabled data-i18n="btnDelete">Delete</button>
 
-			<div id="text-controls" class="toolbar-text-controls" role="group" aria-label="Text size" hidden>
-				<button id="btn-font-smaller" type="button" class="tool-btn" title="Smaller text">A-</button>
+			<div id="text-controls" class="toolbar-text-controls" role="group" data-i18n-attr="aria-label:textControlsLabel" aria-label="Text size" hidden>
+				<button id="btn-font-smaller" type="button" class="tool-btn" data-i18n-attr="title:btnFontSmaller" title="Smaller text">A-</button>
 				<span id="font-size-value" class="toolbar-font-size" aria-live="polite">16</span>
-				<button id="btn-font-larger" type="button" class="tool-btn" title="Larger text">A+</button>
+				<button id="btn-font-larger" type="button" class="tool-btn" data-i18n-attr="title:btnFontLarger" title="Larger text">A+</button>
 			</div>
 
-			<div class="toolbar-zoom" role="group" aria-label="Zoom">
-				<button id="btn-zoom-out" type="button" class="tool-btn" title="Zoom out">-</button>
-				<button id="btn-zoom-reset" type="button" class="tool-btn" title="Reset zoom">100%</button>
-				<button id="btn-zoom-in" type="button" class="tool-btn" title="Zoom in">+</button>
+			<div class="toolbar-zoom" role="group" data-i18n-attr="aria-label:zoomGroupLabel" aria-label="Zoom">
+				<button id="btn-zoom-out" type="button" class="tool-btn" data-i18n-attr="title:btnZoomOut" title="Zoom out">-</button>
+				<button id="btn-zoom-reset" type="button" class="tool-btn" data-i18n-attr="title:btnZoomReset" title="Reset zoom">100%</button>
+				<button id="btn-zoom-in" type="button" class="tool-btn" data-i18n-attr="title:btnZoomIn" title="Zoom in">+</button>
 			</div>
 
-			<button id="btn-save" type="button" class="toolbar-btn" disabled>Save</button>
+			<button id="btn-save" type="button" class="toolbar-btn" disabled data-i18n="btnSave">Save</button>
 			<span id="canvas-status" class="toolbar-status" data-state="idle"></span>
 		</div>
 
@@ -41,20 +41,20 @@
 				height="100%"
 				preserveAspectRatio="xMinYMin meet">
 			</svg>
-			<div id="canvas-empty" class="empty-state" hidden>
+			<div id="canvas-empty" class="empty-state" hidden data-i18n="emptyStateHint">
 				Add text, shapes, arrows, or linked Joplin notes.
 			</div>
 		</div>
 
 		<div id="note-picker" class="picker-overlay">
-			<div class="picker-modal" role="dialog" aria-label="Add note or task">
+			<div class="picker-modal" role="dialog" data-i18n-attr="aria-label:pickerDialogLabel" aria-label="Add note or task">
 				<div class="picker-header">
-					<span class="picker-title">Add note or task</span>
-					<button id="picker-close" type="button" class="picker-close" aria-label="Close">x</button>
+					<span class="picker-title" data-i18n="pickerTitle">Add note or task</span>
+					<button id="picker-close" type="button" class="picker-close" data-i18n-attr="aria-label:pickerCloseLabel" aria-label="Close">x</button>
 				</div>
-				<input id="picker-input" class="picker-input" type="text" placeholder="Search notes..." autocomplete="off" />
+				<input id="picker-input" class="picker-input" type="text" data-i18n-attr="placeholder:pickerInputPlaceholder" placeholder="Search notes..." autocomplete="off" />
 				<ul id="picker-results" class="picker-results"></ul>
-				<div id="picker-empty" class="picker-empty" hidden>No matches</div>
+				<div id="picker-empty" class="picker-empty" hidden data-i18n="pickerEmpty">No matches</div>
 			</div>
 		</div>
 	</div>

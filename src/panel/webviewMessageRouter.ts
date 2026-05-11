@@ -6,6 +6,7 @@
 
 import { CanvasDocument } from '../canvas/canvasTypes';
 import { serializeCanvasToSvg } from '../canvas/svgSerializer';
+import strings, { formatLocalizedString } from '../i18n/localization';
 import { openNote } from '../joplin/notesApi';
 import { updateSvgResource } from '../joplin/resourcesApi';
 import { getNoteSummaryById, searchNotes } from '../joplin/searchApi';
@@ -53,7 +54,7 @@ async function dispatch(
 
 		case 'saveCanvas': {
 			const active = ctx.getActive();
-			if (!active) return { ok: false, error: 'No active canvas to save into' };
+			if (!active) return { ok: false, error: strings.errorNoActiveCanvas };
 			const svg = serializeCanvasToSvg(message.doc);
 			await updateSvgResource(active.resourceId, svg);
 			ctx.setActiveDoc(message.doc);
@@ -62,7 +63,7 @@ async function dispatch(
 
 		case 'openLinkedNote': {
 			const summary = await getNoteSummaryById(message.noteId);
-			if (!summary) return { ok: false, error: 'Linked note no longer exists' };
+			if (!summary) return { ok: false, error: strings.errorLinkedNoteMissing };
 			await openNote(message.noteId);
 			return { ok: true };
 		}
@@ -98,7 +99,12 @@ async function dispatch(
 
 		default: {
 			const _exhaustive: never = message;
-			return { ok: false, error: `Unknown message: ${JSON.stringify(_exhaustive)}` };
+			return {
+				ok: false,
+				error: formatLocalizedString(strings.errorUnknownMessage, {
+					message: JSON.stringify(_exhaustive),
+				}),
+			};
 		}
 	}
 }

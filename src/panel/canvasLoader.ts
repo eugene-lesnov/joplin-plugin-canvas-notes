@@ -10,6 +10,7 @@
 import joplin from 'api';
 import { CanvasDocument } from '../canvas/canvasTypes';
 import { CanvasParseError, parseCanvasFromSvg } from '../canvas/svgParser';
+import strings, { formatLocalizedString } from '../i18n/localization';
 import { findFirstResourceId, isCanvasNoteBody } from '../joplin/noteBodyUtils';
 import { readSvgResource } from '../joplin/resourcesApi';
 
@@ -40,7 +41,7 @@ export type CanvasLoadResult = CanvasLoadSuccess | CanvasLoadFailure;
  */
 export async function loadCanvasForNote(noteId: string): Promise<CanvasLoadResult> {
 	if (!noteId) {
-		return { ok: false, message: 'No note id provided' };
+		return { ok: false, message: strings.errorNoNoteId };
 	}
 
 	const note = await joplin.data.get(['notes', noteId], { fields: ['id', 'body'] });
@@ -48,7 +49,7 @@ export async function loadCanvasForNote(noteId: string): Promise<CanvasLoadResul
 		return {
 			ok: false,
 			notACanvas: true,
-			message: 'This note is not a Canvas Note. Use Tools -> Canvas Notes -> Create Canvas Note.',
+			message: strings.errorNotACanvasNote,
 		};
 	}
 
@@ -56,7 +57,7 @@ export async function loadCanvasForNote(noteId: string): Promise<CanvasLoadResul
 	if (!resourceId) {
 		return {
 			ok: false,
-			message: 'Canvas Note body has no embedded SVG resource. The body has likely been edited manually.',
+			message: strings.errorNoEmbeddedResource,
 		};
 	}
 
@@ -65,7 +66,10 @@ export async function loadCanvasForNote(noteId: string): Promise<CanvasLoadResul
 		svg = await readSvgResource(resourceId);
 	} catch (e) {
 		const msg = e instanceof Error ? e.message : String(e);
-		return { ok: false, message: `SVG resource not found or unreadable (${msg}).` };
+		return {
+			ok: false,
+			message: formatLocalizedString(strings.errorSvgResourceUnreadable, { reason: msg }),
+		};
 	}
 
 	try {
@@ -74,8 +78,8 @@ export async function loadCanvasForNote(noteId: string): Promise<CanvasLoadResul
 	} catch (e) {
 		if (e instanceof CanvasParseError) {
 			const hint = /metadata/i.test(e.message)
-				? 'Canvas metadata is missing or corrupted.'
-				: 'Cannot read canvas data.';
+				? strings.errorMetadataMissing
+				: strings.errorMetadataUnreadable;
 			return { ok: false, message: `${hint} ${e.message}` };
 		}
 		throw e;

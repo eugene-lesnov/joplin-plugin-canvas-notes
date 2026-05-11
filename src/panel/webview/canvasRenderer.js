@@ -21,6 +21,11 @@
 	const Handles = window.CanvasNotes && window.CanvasNotes.Handles;
 	const TextWrap = window.CanvasNotes && window.CanvasNotes.TextWrap;
 
+	function t(key, fallback) {
+		const i18n = window.CanvasNotes && window.CanvasNotes.t;
+		return typeof i18n === 'function' ? i18n(key) : fallback;
+	}
+
 	const SVG_NS = 'http://www.w3.org/2000/svg';
 	const ARROWHEAD_ID = 'canvas-arrowhead';
 	const SELECTION_LAYER_ID = 'selection-overlay';
@@ -153,7 +158,7 @@
 			'font-family': 'sans-serif',
 			fill: '#ffffff',
 		});
-		title.textContent = e.title || '(untitled)';
+		title.textContent = e.title || t('cardUntitled', '(untitled)');
 		g.appendChild(title);
 
 		let cursorY = e.y + CARD_TITLE_HEIGHT + CARD_BODY_LINE_HEIGHT;
@@ -163,7 +168,9 @@
 				x: e.x + CARD_TITLE_PAD_X, y: cursorY,
 				'font-size': 12, 'font-family': 'sans-serif', fill: '#666666',
 			});
-			status.textContent = e.completed ? '[x] done' : '[ ] todo';
+			status.textContent = e.completed
+				? t('todoStatusDone', '[x] done')
+				: t('todoStatusOpen', '[ ] todo');
 			g.appendChild(status);
 			cursorY += 16;
 		}
@@ -180,7 +187,7 @@
 				x: e.x + CARD_TITLE_PAD_X, y: e.y + e.h - 10,
 				'font-size': 11, 'font-family': 'sans-serif', fill: '#b00020',
 			});
-			note.textContent = 'broken link';
+			note.textContent = t('cardBrokenLink', 'broken link');
 			g.appendChild(note);
 		}
 

@@ -15,6 +15,11 @@
 
 	const DEBOUNCE_MS = 200;
 
+	function t(key, fallback) {
+		const i18n = window.CanvasNotes && window.CanvasNotes.t;
+		return typeof i18n === 'function' ? i18n(key) : fallback;
+	}
+
 	let onPickedCb = null;
 	let debounceHandle = null;
 	let lastQueryToken = 0;
@@ -96,15 +101,17 @@
 			const badge = document.createElement('span');
 			if (it.isTodo) {
 				badge.className = 'picker-badge todo' + (it.todoCompleted ? ' done' : '');
-				badge.textContent = it.todoCompleted ? 'done' : 'todo';
+				badge.textContent = it.todoCompleted
+					? t('pickerBadgeDone', 'done')
+					: t('pickerBadgeTodo', 'todo');
 			} else {
 				badge.className = 'picker-badge';
-				badge.textContent = 'note';
+				badge.textContent = t('pickerBadgeNote', 'note');
 			}
 			li.appendChild(badge);
 
 			const title = document.createElement('span');
-			title.textContent = it.title || '(untitled)';
+			title.textContent = it.title || t('pickerUntitled', '(untitled)');
 			li.appendChild(title);
 
 			li.addEventListener('mouseenter', () => setActive(idx));

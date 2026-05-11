@@ -14,6 +14,11 @@
 (function () {
 	'use strict';
 
+	function t(key, fallback) {
+		const i18n = window.CanvasNotes && window.CanvasNotes.t;
+		return typeof i18n === 'function' ? i18n(key) : fallback;
+	}
+
 	const ICON_SELECT =
 		`<svg viewBox="0 0 16 16" aria-hidden="true">` +
 			`<path d="M3 2 L13 8 L8 9 L11 14 L9 15 L6 10 L3 13 Z"/>` +
@@ -48,13 +53,13 @@
 		`</svg>`;
 
 	const TOOLS = [
-		{ id: 'select', label: 'Select', icon: ICON_SELECT },
-		{ id: 'square', label: 'Square', icon: ICON_SQUARE },
-		{ id: 'circle', label: 'Circle', icon: ICON_CIRCLE },
-		{ id: 'line',   label: 'Line',   icon: ICON_LINE },
-		{ id: 'arrow',  label: 'Arrow',  icon: ICON_ARROW },
-		{ id: 'pen',    label: 'Pen',    icon: ICON_PEN },
-		{ id: 'text',   label: 'Text',   icon: ICON_TEXT },
+		{ id: 'select', labelKey: 'toolSelect', fallback: 'Select', icon: ICON_SELECT },
+		{ id: 'square', labelKey: 'toolSquare', fallback: 'Square', icon: ICON_SQUARE },
+		{ id: 'circle', labelKey: 'toolCircle', fallback: 'Circle', icon: ICON_CIRCLE },
+		{ id: 'line',   labelKey: 'toolLine',   fallback: 'Line',   icon: ICON_LINE },
+		{ id: 'arrow',  labelKey: 'toolArrow',  fallback: 'Arrow',  icon: ICON_ARROW },
+		{ id: 'pen',    labelKey: 'toolPen',    fallback: 'Pen',    icon: ICON_PEN },
+		{ id: 'text',   labelKey: 'toolText',   fallback: 'Text',   icon: ICON_TEXT },
 	];
 
 	const DEFAULT_TOOL = 'select';
@@ -69,8 +74,9 @@
 			btn.type = 'button';
 			btn.className = 'tool-btn icon-btn';
 			btn.dataset.tool = tool.id;
-			btn.title = tool.label;
-			btn.setAttribute('aria-label', tool.label);
+			const label = t(tool.labelKey, tool.fallback);
+			btn.title = label;
+			btn.setAttribute('aria-label', label);
 			btn.innerHTML = tool.icon;
 			btn.addEventListener('click', () => setActive(tool.id));
 			host.appendChild(btn);

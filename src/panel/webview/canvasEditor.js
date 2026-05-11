@@ -38,6 +38,11 @@
 	const C = window.CanvasNotes && window.CanvasNotes.EditorConstants;
 	function notePicker() { return window.CanvasNotes && window.CanvasNotes.NotePicker; }
 
+	function t(key, fallback) {
+		const i18n = window.CanvasNotes && window.CanvasNotes.t;
+		return typeof i18n === 'function' ? i18n(key) : fallback;
+	}
+
 	// --- runtime state ------------------------------------------------------
 
 	/** @type {object|null} the document driven by the user */
@@ -162,7 +167,7 @@
 	function markDirty() {
 		saveState = 'dirty';
 		showError(null);
-		setStatus('Unsaved changes', 'dirty');
+		setStatus(t('statusUnsaved', 'Unsaved changes'), 'dirty');
 		updateToolbar();
 		scheduleAutosave();
 	}
@@ -538,10 +543,10 @@
 
 		const btnCancel = document.createElement('button');
 		btnCancel.type = 'button';
-		btnCancel.textContent = 'Cancel';
+		btnCancel.textContent = t('promptCancel', 'Cancel');
 		const btnOk = document.createElement('button');
 		btnOk.type = 'button';
-		btnOk.textContent = 'OK';
+		btnOk.textContent = t('promptOk', 'OK');
 		buttons.appendChild(btnCancel);
 		buttons.appendChild(btnOk);
 		dialog.appendChild(buttons);
@@ -828,17 +833,17 @@
 	function buildContextMenuItems(hit) {
 		if (!hit) {
 			return [
-				{ label: 'Add note/task...', action: onAddNoteClick },
-				{ label: 'Reset zoom', action: () => setZoom(1) },
+				{ label: t('ctxAddNote', 'Add note/task...'), action: onAddNoteClick },
+				{ label: t('ctxResetZoom', 'Reset zoom'), action: () => setZoom(1) },
 			];
 		}
 		const items = [];
 		if (hit.type === 'noteCard' || hit.type === 'todoCard') {
-			items.push({ label: 'Open linked note', action: () => openCardLink(hit) });
+			items.push({ label: t('ctxOpenLinkedNote', 'Open linked note'), action: () => openCardLink(hit) });
 		}
-		items.push({ label: 'Bring to front', action: () => zOrder(hit.id, 'front') });
-		items.push({ label: 'Send to back',  action: () => zOrder(hit.id, 'back') });
-		items.push({ label: 'Delete', action: () => deleteElement(hit.id) });
+		items.push({ label: t('ctxBringToFront', 'Bring to front'), action: () => zOrder(hit.id, 'front') });
+		items.push({ label: t('ctxSendToBack', 'Send to back'),  action: () => zOrder(hit.id, 'back') });
+		items.push({ label: t('ctxDelete', 'Delete'), action: () => deleteElement(hit.id) });
 		return items;
 	}
 
@@ -846,7 +851,7 @@
 		const res = await postMessage({ type: 'openLinkedNote', noteId: card.noteId });
 		if (res && res.ok === false) {
 			markCardBroken(card.id, true);
-			showError((res && res.error) || 'Failed to open linked note');
+			showError((res && res.error) || t('errorOpenLinkedNote', 'Failed to open linked note'));
 		}
 	}
 
@@ -893,15 +898,15 @@
 				selectedId = null;
 				saveState = 'idle';
 				showError(null);
-				setStatus('Loaded', 'idle');
+				setStatus(t('statusLoaded', 'Loaded'), 'idle');
 				if (canvasFit) canvasFit.start(doc);
 				render();
 				void validateLinkedCards();
 				break;
 			case 'error':
-				showError(message.message || 'Unknown error');
+				showError(message.message || t('errorUnknown', 'Unknown error'));
 				saveState = 'error';
-				setStatus('Error', 'error');
+				setStatus(t('statusError', 'Error'), 'error');
 				updateToolbar();
 				break;
 			default:
@@ -911,7 +916,7 @@
 
 	async function onSaveClick() {
 		if (!doc) {
-			showError('Nothing to save: canvas is not loaded yet');
+			showError(t('errorNothingToSave', 'Nothing to save: canvas is not loaded yet'));
 			return;
 		}
 		// Flush the textarea overlay so the user's in-flight edits land in
@@ -919,7 +924,7 @@
 		if (textEditor) closeTextOverlayEditor('commit');
 		if (saveState === 'saving') return;
 		saveState = 'saving';
-		setStatus('Saving...', 'saving');
+		setStatus(t('statusSaving', 'Saving...'), 'saving');
 		updateToolbar();
 
 		const updatedDoc = Object.assign({}, doc, {
@@ -930,12 +935,12 @@
 			doc = updatedDoc;
 			showError(null);
 			saveState = 'idle';
-			setStatus('Saved', 'saved');
+			setStatus(t('statusSaved', 'Saved'), 'saved');
 		} else {
-			const err = (res && res.error) || 'Save failed';
+			const err = (res && res.error) || t('errorSaveFailed', 'Save failed');
 			showError(err);
 			saveState = 'error';
-			setStatus('Save failed', 'error');
+			setStatus(t('statusSaveFailed', 'Save failed'), 'error');
 		}
 		updateToolbar();
 	}
@@ -947,7 +952,7 @@
 	function onAddNoteClick() {
 		const picker = notePicker();
 		if (!picker) {
-			showError('Note picker is not available');
+			showError(t('errorPickerUnavailable', 'Note picker is not available'));
 			return;
 		}
 		picker.open((summary) => {
@@ -991,7 +996,7 @@
 		const res = await postMessage({ type: 'openLinkedNote', noteId: hit.noteId });
 		if (!res || !res.ok) {
 			markCardBroken(hit.id, true);
-			showError((res && res.error) || 'Failed to open linked note');
+			showError((res && res.error) || t('errorOpenLinkedNote', 'Failed to open linked note'));
 		}
 	}
 
@@ -1322,7 +1327,7 @@
 
 		canvasFit = buildCanvasFit();
 
-		setStatus('Ready', 'idle');
+		setStatus(t('statusReady', 'Ready'), 'idle');
 		updateToolbar();
 		postMessage({ type: 'ready' });
 	}

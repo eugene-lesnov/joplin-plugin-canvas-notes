@@ -21,6 +21,7 @@ import { ViewHandle } from 'api/types';
 import { promises as fs } from 'fs';
 import * as path from 'path';
 import { CanvasDocument } from '../canvas/canvasTypes';
+import strings, { formatLocalizedString } from '../i18n/localization';
 import { isCanvasNoteBody } from '../joplin/noteBodyUtils';
 import { loadCanvasForNote } from './canvasLoader';
 import { BackendToWebview, WebviewToBackend } from './messageTypes';
@@ -33,6 +34,8 @@ const WEBVIEW_HTML_NAME = 'index.html';
 /** Order matters: dependencies first, controller last. */
 const WEBVIEW_SCRIPTS = [
 	`./${WEBVIEW_DIR}/styles.css`,
+	// Localization must come first so other modules can read CanvasNotes.t.
+	`./${WEBVIEW_DIR}/i18n.js`,
 	// Shared helpers (must be loaded before the renderer and the controller).
 	`./${WEBVIEW_DIR}/canvasGeometry.js`,
 	`./${WEBVIEW_DIR}/canvasHandles.js`,
@@ -110,7 +113,7 @@ async function loadAndPushCanvas(state: EditorInstanceState, noteId: string): Pr
 		else state.pendingLoad = target;
 	} catch (e) {
 		const msg = e instanceof Error ? e.message : String(e);
-		postError(state, `Failed to load canvas: ${msg}`);
+		postError(state, formatLocalizedString(strings.errorLoadCanvasFailed, { reason: msg }));
 		// eslint-disable-next-line no-console
 		console.error('[Canvas Notes] loadAndPushCanvas failed:', e);
 	}

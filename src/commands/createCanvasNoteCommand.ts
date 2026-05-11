@@ -1,11 +1,11 @@
 import joplin from 'api';
 import { createEmptyCanvas } from '../canvas/canvasModel';
 import { serializeCanvasToSvg } from '../canvas/svgSerializer';
+import strings, { formatLocalizedString } from '../i18n/localization';
 import { createNote, openNote } from '../joplin/notesApi';
 import { buildCanvasNoteBody } from '../joplin/noteBodyUtils';
 import { createSvgResource } from '../joplin/resourcesApi';
 
-const DEFAULT_TITLE = 'Untitled';
 const RESOURCE_TITLE = 'canvas';
 
 /**
@@ -21,15 +21,17 @@ const RESOURCE_TITLE = 'canvas';
 export async function registerCreateCanvasNoteCommand(commandName: string): Promise<void> {
 	await joplin.commands.register({
 		name: commandName,
-		label: 'Create Canvas Note',
+		label: strings.createCanvasNoteLabel,
 		execute: async () => {
 			try {
 				const doc = createEmptyCanvas();
 				const svg = serializeCanvasToSvg(doc);
 
+				const defaultTitle = strings.defaultCanvasNoteTitle;
 				const resourceId = await createSvgResource(svg, RESOURCE_TITLE);
-				const body = buildCanvasNoteBody(DEFAULT_TITLE, resourceId);
-				const note = await createNote(`Canvas: ${DEFAULT_TITLE}`, body);
+				const body = buildCanvasNoteBody(defaultTitle, resourceId);
+				const noteTitle = formatLocalizedString(strings.canvasNoteTitlePrefix, { title: defaultTitle });
+				const note = await createNote(noteTitle, body);
 
 				await openNote(note.id);
 				// Programmatically switch to our editor view for the new note.

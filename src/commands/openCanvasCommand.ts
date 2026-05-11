@@ -1,4 +1,5 @@
 import joplin from 'api';
+import strings from '../i18n/localization';
 
 /**
  * "Open Canvas Editor" command.
@@ -12,7 +13,7 @@ import joplin from 'api';
 export async function registerOpenCanvasCommand(commandName: string): Promise<void> {
 	await joplin.commands.register({
 		name: commandName,
-		label: 'Open Canvas Editor',
+		label: strings.openCanvasEditorLabel,
 		execute: async () => {
 			try {
 				await joplin.commands.execute('showEditorPlugin');
