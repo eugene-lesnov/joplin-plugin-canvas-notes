@@ -389,6 +389,14 @@
 		Renderer.renderDocument(svg(), doc, selectedId);
 		applyZoom();
 		updateToolbar();
+		// renderDocument пересоздаёт все SVG-узлы. Ссылки в hiddenNodes
+		// указывают на удалённые элементы, а новый label-узел
+		// остаётся видимым и накладывается на textarea. Переприменяем
+		// скрытие по текущему редактору.
+		if (textEditor) {
+			textEditor.hiddenNodes = [];
+			hideEditedTextNode(textEditor.elementId, textEditor.kind);
+		}
 	}
 
 	function refreshSelection() {
@@ -1276,7 +1284,6 @@
 			originalText: target.text || '',
 			fontSize: target.fontSize || TEXT_DEFAULT_FONT_SIZE,
 			color: '#222',
-			background: 'rgba(255,255,255,0.96)',
 			textAlign: 'left',
 		};
 		openTextOverlayEditor(view, (nextText) => {
@@ -1295,16 +1302,27 @@
 		const box = shapeLabelBox(target);
 		if (!box) return;
 		const label = target.label || DEFAULT_SHAPE_LABEL;
+
+		// Компактный overlay-бокс вокруг центра фигуры, как у line label.
+		// Растягивать textarea на весь bbox нельзя: фигуры сложной
+		// формы (cloud, callout) имеют bbox сильно больше видимой области,
+		// и прямоугольный textarea перекрывает всю фигуру.
+		const minW = 120;
+		const maxW = 400;
+		// 90% от ширины bbox - небольшой внутренний зазор для визуального
+		// разделения overlay и границ фигуры.
+		const w = Math.max(minW, Math.min(maxW, box.w * 0.9));
+		const h = 60;
+		const cx = box.x + box.w / 2;
+		const cy = box.y + box.h / 2;
+
 		const view = {
 			kind: 'shapeLabel',
 			elementId: target.id,
-			box: { x: box.x, y: box.y, w: box.w, h: box.h },
+			box: { x: cx - w / 2, y: cy - h / 2, w, h },
 			originalText: label.text || '',
 			fontSize: label.fontSize || DEFAULT_SHAPE_LABEL.fontSize,
 			color: label.color || DEFAULT_SHAPE_LABEL.color,
-			// Translucent backdrop keeps the shape visually present under the
-			// textarea but ensures the text being typed stays legible.
-			background: 'rgba(255,255,255,0.85)',
 			textAlign: label.align === 'left' ? 'left'
 				: (label.align === 'right' ? 'right' : 'center'),
 			verticalAlign: label.verticalAlign || DEFAULT_SHAPE_LABEL.verticalAlign,
@@ -1326,7 +1344,6 @@
 		const label = target.label || DEFAULT_LINE_LABEL;
 		const cx = (target.from.x + target.to.x) / 2;
 		const cy = (target.from.y + target.to.y) / 2;
-		const bg = (doc && doc.background) ? doc.background : '#ffffff';
 
 		// Width matches the renderer's available-along-the-line budget so
 		// what the user types maps directly to how the label will wrap.
@@ -1350,7 +1367,6 @@
 			originalText: label.text || '',
 			fontSize: label.fontSize || DEFAULT_LINE_LABEL.fontSize,
 			color: label.color || DEFAULT_LINE_LABEL.color,
-			background: bg,
 			textAlign: 'center',
 			verticalAlign: 'middle',
 		};
@@ -1374,8 +1390,11 @@
 	 *   - originalText:   pre-filled value, used to detect changes
 	 *   - fontSize:       font size in document units
 	 *   - color:          textarea text color (hex/rgba)
-	 *   - background:     textarea background (hex/rgba)
 	 *   - textAlign:      'left' | 'center' | 'right'
+	 *
+	 * The overlay background is always transparent; the underlying SVG
+	 * stays visible while the original text node is hidden via
+	 * hideEditedTextNode for the duration of the edit.
 	 *
 	 * `onCommit(nextText, { fontSize })` is invoked only when the user
 	 * keeps changes. Cancel and unchanged commits skip the callback.
@@ -1420,6 +1439,9 @@
 		ta.setAttribute('spellcheck', 'false');
 		ta.setAttribute('wrap', 'soft');
 
+		// Editor всегда прозрачный: под ним видна фигура/линия/фон,
+		// а оригин��льный текст скрыт через hideEditedTextNode. Рамка
+		// 1px solid #4a90e2 обозначает активную область редактирования.
 		let wrapper = null;
 		const useWrapper = view.kind === 'shapeLabel' || view.kind === 'lineLabel';
 		if (useWrapper) {
@@ -1434,7 +1456,7 @@
 				`width:${widthPx}px;height:${heightPx}px;` +
 				'display:flex;justify-content:center;' +
 				`align-items:${flexAlignFor(view.verticalAlign)};` +
-				`background:${view.background};` +
+				'background:transparent;' +
 				'border:1px solid #4a90e2;border-radius:2px;' +
 				'box-sizing:border-box;overflow:hidden;z-index:9998;');
 
@@ -1460,7 +1482,7 @@
 				`text-align:${view.textAlign};` +
 				'padding:2px 4px;margin:0;' +
 				'border:1px solid #4a90e2;border-radius:2px;' +
-				`background:${view.background};color:${view.color};` +
+				`background:transparent;color:${view.color};` +
 				'box-sizing:border-box;outline:none;resize:none;' +
 				'overflow:hidden;z-index:9998;');
 			document.body.appendChild(ta);
