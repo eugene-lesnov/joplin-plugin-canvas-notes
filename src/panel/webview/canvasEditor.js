@@ -79,6 +79,7 @@
 	const TEXT_FONT_SIZE_MIN = 8;
 	const TEXT_FONT_SIZE_MAX = 96;
 	const TEXT_FONT_SIZE_STEP = 2;
+	const TEXT_DEFAULT_FONT_SIZE = 16;
 
 	// Defaults and minimums for text-box geometry. Kept in sync with the
 	// transforms module so drag-create and resize agree on bounds.
@@ -86,6 +87,15 @@
 	const TEXT_DEFAULT_H = 80;
 	const TEXT_MIN_W = 40;
 	const TEXT_MIN_H = 24;
+
+	/**
+	 * Размер шрифта, который будет применён к следующему создаваемому
+	 * текстовому элементу. Меняется кнопками A-/A+, когда нет ни
+	 * выделенного текстового элемента, ни активного оверлей-редактора
+	 * с конкретным таргетом. Это позволяет настраивать размер до того,
+	 * как пользователь нарисует текстовый блок.
+	 */
+	let pendingTextFontSize = TEXT_DEFAULT_FONT_SIZE;
 
 	function clampFontSize(v) {
 		if (!Number.isFinite(v)) return TEXT_FONT_SIZE_MIN;
@@ -98,23 +108,67 @@
 		return (el && el.type === 'text') ? el : null;
 	}
 
-	/**
-	 * Applies a font-size delta to the selected text element. Updates the
-	 * model, redraws, marks dirty, and keeps the overlay textarea in sync
-	 * when an in-place edit happens to be active for the same element.
-	 */
-	function adjustSelectedTextFontSize(delta) {
-		const sel = getSelectedTextElement();
-		if (!sel) return;
-		const next = clampFontSize((sel.fontSize || 16) + delta);
-		if (next === sel.fontSize) return;
+	function findTextElement(elementId) {
+		if (!doc || !elementId) return null;
+		const el = doc.elements.find((e) => e.id === elementId);
+		return (el && el.type === 'text') ? el : null;
+	}
 
-		const changed = mapElement(sel.id, (e) =>
-			Object.assign({}, e, { fontSize: next }));
-		if (!changed) return;
-		markDirty();
-		render();
-		syncTextEditorFontSize(sel.id, next);
+	/**
+	 * Возвращает текущий эффективный размер шрифта для UI text-controls.
+	 * Приоритет: выделенный text-элемент -> активный оверлей-редактор
+	 * (включая черновик нового текста) -> pendingTextFontSize.
+	 */
+	function currentTextFontSize() {
+		const sel = getSelectedTextElement();
+		if (sel) return sel.fontSize || TEXT_DEFAULT_FONT_SIZE;
+		if (textEditor) return textEditor.fontSize || TEXT_DEFAULT_FONT_SIZE;
+		return pendingTextFontSize;
+	}
+
+	/**
+	 * Универсальная правка размера текста. Работает в трёх режимах:
+	 *   1. Выбран text-элемент - меняем его fontSize.
+	 *   2. Открыт оверлей-редактор - меняем размер у соответствующего
+	 *      элемента (если он уже в документе) и/или у черновика.
+	 *   3. Ничего из перечисленного - меняем только pendingTextFontSize,
+	 *      который применится к следующему создаваемому элементу.
+	 * Во всех случаях держим textarea, лейбл в тулбаре и состояние
+	 * кнопок A-/A+ в актуальном виде.
+	 */
+	function adjustTextFontSize(delta) {
+		const next = clampFontSize(currentTextFontSize() + delta);
+		if (next === currentTextFontSize()) return;
+
+		pendingTextFontSize = next;
+
+		const sel = getSelectedTextElement();
+		if (sel) {
+			const changed = mapElement(sel.id, (e) =>
+				Object.assign({}, e, { fontSize: next }));
+			if (changed) {
+				markDirty();
+				render();
+			}
+		}
+
+		if (textEditor) {
+			textEditor.fontSize = next;
+			// Если элемент оверлея уже есть в документе (редактирование, а
+			// не создание черновика) - синхронизируем модель тоже.
+			const editing = findTextElement(textEditor.elementId);
+			if (editing && editing !== sel) {
+				const changed = mapElement(editing.id, (e) =>
+					Object.assign({}, e, { fontSize: next }));
+				if (changed) {
+					markDirty();
+					render();
+				}
+			}
+			syncTextEditorFontSize(textEditor.elementId, next);
+		}
+
+		updateTextControls();
 	}
 
 	function syncTextEditorFontSize(elementId, fontSize) {
@@ -204,18 +258,21 @@
 	function updateTextControls() {
 		const group = $('text-controls');
 		if (!group) return;
-		const sel = getSelectedTextElement();
-		if (!sel) {
-			group.hidden = true;
-			return;
-		}
-		group.hidden = false;
+		// Контролы видны если есть с чем работать: выбранный текст,
+		// активный оверлей-редактор или просто включенный инструмент Text
+		// (тогда A-/A+ меняют pendingTextFontSize для следующего элемента).
+		const visible = !!getSelectedTextElement()
+			|| !!textEditor
+			|| activeTool === 'text';
+		group.hidden = !visible;
+		if (!visible) return;
+		const value = currentTextFontSize();
 		const valueLabel = $('font-size-value');
-		if (valueLabel) valueLabel.textContent = String(sel.fontSize);
+		if (valueLabel) valueLabel.textContent = String(value);
 		const smaller = $('btn-font-smaller');
-		if (smaller) smaller.disabled = sel.fontSize <= TEXT_FONT_SIZE_MIN;
+		if (smaller) smaller.disabled = value <= TEXT_FONT_SIZE_MIN;
 		const larger = $('btn-font-larger');
-		if (larger) larger.disabled = sel.fontSize >= TEXT_FONT_SIZE_MAX;
+		if (larger) larger.disabled = value >= TEXT_FONT_SIZE_MAX;
 	}
 
 	function updateEmptyState() {
@@ -375,6 +432,7 @@
 			selectedId = null;
 			refreshSelection();
 		}
+		updateTextControls();
 	}
 
 	function updateHoverCursor(p) {
@@ -834,12 +892,17 @@
 
 		const draft = Object.assign(
 			Factories.makeText({ x: bounds.x, y: bounds.y }, nextZ(), ''),
-			{ width: bounds.width, height: bounds.height },
+			{
+				width: bounds.width,
+				height: bounds.height,
+				fontSize: clampFontSize(pendingTextFontSize),
+			},
 		);
-		openTextOverlayEditor(draft, (nextText) => {
+		openTextOverlayEditor(draft, (nextText, snapshot) => {
 			const trimmed = (nextText || '').replace(/^\s+|\s+$/g, '');
 			if (trimmed.length === 0) return; // empty - drop the draft
-			addElement(Object.assign({}, draft, { text: nextText }));
+			const fontSize = (snapshot && snapshot.fontSize) || draft.fontSize;
+			addElement(Object.assign({}, draft, { text: nextText, fontSize }));
 		});
 		// Sticky: stay on Text tool so the user can keep adding boxes.
 		// Switching to Select happens automatically only when the editor
@@ -1159,6 +1222,7 @@
 		textEditor = {
 			elementId: target.id,
 			originalText: target.text || '',
+			fontSize: target.fontSize || TEXT_DEFAULT_FONT_SIZE,
 			textarea: ta,
 			hiddenNode: null,
 			onCommit: typeof onCommit === 'function' ? onCommit : null,
@@ -1166,6 +1230,7 @@
 		};
 
 		hideEditedTextNode(target.id);
+		updateTextControls();
 
 		ta.addEventListener('keydown', onTextEditorKeyDown);
 		ta.addEventListener('blur', onTextEditorBlur);
@@ -1221,7 +1286,7 @@
 
 	function closeTextOverlayEditor(reason) {
 		if (!textEditor) return;
-		const { originalText, textarea, hiddenNode, onCommit, focusHandle } = textEditor;
+		const { originalText, textarea, hiddenNode, onCommit, focusHandle, fontSize } = textEditor;
 		const nextValue = textarea.value;
 		// Detach listeners and pending timers before removing the node so
 		// blur callbacks and the deferred focus call do not re-enter.
@@ -1233,10 +1298,11 @@
 		textEditor = null;
 
 		if (reason === 'commit' && nextValue !== originalText && onCommit) {
-			onCommit(nextValue);
+			onCommit(nextValue, { fontSize });
 		}
 		// Make sure the user is back in Select mode after editing.
 		if (activeTool !== 'select') setActiveTool('select');
+		updateTextControls();
 	}
 
 	function updateTextValue(elementId, nextText) {
@@ -1323,7 +1389,7 @@
 	function bindToolbar() {
 		const toolsHost = document.querySelector('[data-role="tools"]');
 		if (!toolsHost) return;
-		toolbarApi = Toolbar.mount(toolsHost, (toolId) => {
+	toolbarApi = Toolbar.mount(toolsHost, (toolId) => {
 			activeTool = toolId;
 			const node = svg();
 			if (node) node.setAttribute('data-tool', toolId);
@@ -1331,6 +1397,7 @@
 				selectedId = null;
 				refreshSelection();
 			}
+			updateTextControls();
 		});
 	}
 
@@ -1350,9 +1417,9 @@
 		if (zoomReset) zoomReset.addEventListener('click', () => setZoom(1));
 
 		const fontSmaller = $('btn-font-smaller');
-		if (fontSmaller) fontSmaller.addEventListener('click', () => adjustSelectedTextFontSize(-TEXT_FONT_SIZE_STEP));
+		if (fontSmaller) fontSmaller.addEventListener('click', () => adjustTextFontSize(-TEXT_FONT_SIZE_STEP));
 		const fontLarger = $('btn-font-larger');
-		if (fontLarger) fontLarger.addEventListener('click', () => adjustSelectedTextFontSize(+TEXT_FONT_SIZE_STEP));
+		if (fontLarger) fontLarger.addEventListener('click', () => adjustTextFontSize(+TEXT_FONT_SIZE_STEP));
 	}
 
 	function bindCanvasEvents() {
