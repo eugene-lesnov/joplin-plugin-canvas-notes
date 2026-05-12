@@ -40,6 +40,7 @@ const WEBVIEW_SCRIPTS = [
 	`./${WEBVIEW_DIR}/canvasGeometry.js`,
 	`./${WEBVIEW_DIR}/canvasHandles.js`,
 	`./${WEBVIEW_DIR}/textWrap.js`,
+	`./${WEBVIEW_DIR}/shapeGeometry.js`,
 	// Renderer + ambient UI.
 	`./${WEBVIEW_DIR}/canvasRenderer.js`,
 	`./${WEBVIEW_DIR}/toolbar.js`,

@@ -66,8 +66,27 @@ function normalizeTextElement(raw: Record<string, unknown>): void {
 }
 
 /**
+ * Normalizes optional fields on arrow/line elements introduced after the
+ * initial release (strokeStyle, startArrow, endArrow). Old documents
+ * predate these fields - we derive sensible defaults so the validator
+ * never fails on previously-saved canvases.
+ */
+function normalizeLineLikeElement(raw: Record<string, unknown>): void {
+	if (raw.strokeStyle !== 'dashed' && raw.strokeStyle !== 'dotted' && raw.strokeStyle !== 'solid') {
+		raw.strokeStyle = 'solid';
+	}
+	if (raw.startArrow !== 'arrow' && raw.startArrow !== 'none') {
+		raw.startArrow = 'none';
+	}
+	if (raw.endArrow !== 'arrow' && raw.endArrow !== 'none') {
+		// Preserve the original visual: arrows had a head, lines did not.
+		raw.endArrow = raw.type === 'arrow' ? 'arrow' : 'none';
+	}
+}
+
+/**
  * Walks the parsed JSON document and normalizes elements that need
- * fallback handling. Currently only text elements use this path.
+ * fallback handling.
  */
 function normalizeDocument(parsed: unknown): void {
 	if (!isPlainObject(parsed)) return;
@@ -76,6 +95,7 @@ function normalizeDocument(parsed: unknown): void {
 	for (const el of elements) {
 		if (!isPlainObject(el)) continue;
 		if (el.type === 'text') normalizeTextElement(el);
+		else if (el.type === 'arrow' || el.type === 'line') normalizeLineLikeElement(el);
 	}
 }
 

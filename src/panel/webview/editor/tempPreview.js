@@ -37,8 +37,13 @@
 		if (child) overlay.removeChild(child);
 	}
 
-	/** Renders a temporary line/arrow segment between (from, to). */
-	function showSegment(svg, kind, from, to) {
+	/**
+	 * Renders a temporary line/arrow segment between (from, to). `spec`
+	 * can be either a legacy string ('arrow' | 'line') or a full lineSpec
+	 * object { type, strokeStyle, startArrow, endArrow }. The preview is
+	 * always dashed for visual distinction from finalized lines.
+	 */
+	function showSegment(svg, spec, from, to) {
 		const overlay = getOverlay(svg);
 		if (!overlay) return;
 		const line = ensureChild(overlay, SEGMENT_ID, () => {
@@ -48,8 +53,18 @@
 			node.setAttribute('stroke-dasharray', '4 3');
 			return node;
 		});
-		if (kind === 'arrow') line.setAttribute('marker-end', 'url(#canvas-arrowhead)');
+
+		const normalized = typeof spec === 'string'
+			? { startArrow: 'none', endArrow: spec === 'arrow' ? 'arrow' : 'none' }
+			: (spec || {});
+		const endArrow = normalized.endArrow || 'none';
+		const startArrow = normalized.startArrow || 'none';
+
+		if (endArrow === 'arrow') line.setAttribute('marker-end', 'url(#canvas-arrowhead)');
 		else line.removeAttribute('marker-end');
+		if (startArrow === 'arrow') line.setAttribute('marker-start', 'url(#canvas-arrowhead-start)');
+		else line.removeAttribute('marker-start');
+
 		line.setAttribute('x1', String(from.x));
 		line.setAttribute('y1', String(from.y));
 		line.setAttribute('x2', String(to.x));
@@ -132,6 +147,10 @@
 		const w = Math.abs(to.x - from.x);
 		const h = Math.abs(to.y - from.y);
 
+		// Only the legacy 'circle' tool needs an elliptical preview; all
+		// other shapes (including unified shape kinds like diamond/hexagon)
+		// fall back to a dashed bounding rectangle which is cheap and reads
+		// clearly as "the bounds of the shape you are about to insert".
 		const tag = kind === 'circle' ? 'ellipse' : 'rect';
 		let node = overlay.querySelector(`#${SHAPE_ID}`);
 		if (node && node.tagName.toLowerCase() !== tag) {

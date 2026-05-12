@@ -76,12 +76,46 @@
 		};
 	}
 
-	function makeSegment(type, from, to, nextZ) {
-		return {
+	/**
+	 * Builds a line/arrow segment with explicit visual style. `type` keeps
+	 * the legacy discriminator ('arrow' for back-compat with the renderer's
+	 * default-end-marker behavior, 'line' otherwise). The actual visual is
+	 * driven by strokeStyle / startArrow / endArrow.
+	 */
+	function makeSegment(type, from, to, nextZ, opts) {
+		const o = opts || {};
+		const el = {
 			id: newId(), type, z: nextZ,
 			from: { x: from.x, y: from.y },
 			to:   { x: to.x,   y: to.y   },
 			stroke: C.DEFAULT_STROKE, strokeWidth: C.DEFAULT_STROKE_WIDTH,
+			strokeStyle: o.strokeStyle || 'solid',
+			startArrow: o.startArrow || 'none',
+			endArrow: o.endArrow || (type === 'arrow' ? 'arrow' : 'none'),
+		};
+		return el;
+	}
+
+	/**
+	 * Builds a unified shape element of the given kind. Drag-create flavor
+	 * uses explicit bounds; the click flavor centers a default-sized box
+	 * on the click point.
+	 */
+	function makeShape(shapeType, p, nextZ) {
+		return {
+			id: newId(), type: 'shape', shapeType: shapeType, z: nextZ,
+			x: p.x - C.DEFAULT_SQUARE / 2, y: p.y - C.DEFAULT_SQUARE / 2,
+			w: C.DEFAULT_SQUARE, h: C.DEFAULT_SQUARE,
+			fill: C.DEFAULT_FILL, stroke: C.DEFAULT_STROKE, strokeWidth: C.DEFAULT_STROKE_WIDTH,
+		};
+	}
+
+	function makeShapeFromBounds(shapeType, bounds, nextZ) {
+		return {
+			id: newId(), type: 'shape', shapeType: shapeType, z: nextZ,
+			x: bounds.x, y: bounds.y,
+			w: bounds.width, h: bounds.height,
+			fill: C.DEFAULT_FILL, stroke: C.DEFAULT_STROKE, strokeWidth: C.DEFAULT_STROKE_WIDTH,
 		};
 	}
 
@@ -144,6 +178,9 @@
 		makeRectangleFromBounds,
 		makeEllipse,
 		makeEllipseFromBounds,
+		makeShape,
+		makeShapeFromBounds,
+		makeSegment,
 		makeArrow: (from, to, z) => makeSegment('arrow', from, to, z),
 		makeLine:  (from, to, z) => makeSegment('line',  from, to, z),
 		makeFreehand,

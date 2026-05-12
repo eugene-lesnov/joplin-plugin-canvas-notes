@@ -28,6 +28,7 @@
 		switch (el.type) {
 			case 'rectangle':
 			case 'square':
+			case 'shape':
 			case 'noteCard':
 			case 'todoCard':
 			case 'text':
@@ -148,6 +149,7 @@
 	function resizeElement(current, initial, handle, p) {
 		switch (initial.type) {
 			case 'rectangle':
+			case 'shape':
 			case 'noteCard':
 			case 'todoCard':
 				return resizeBox(initial, handle, p);

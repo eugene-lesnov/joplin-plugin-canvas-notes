@@ -46,8 +46,19 @@ html, body {
 
 .toolbar-tools {
 	display: inline-flex;
+	align-items: center;
 	gap: 4px;
 	margin-right: 8px;
+	flex-wrap: wrap;
+}
+
+/* Vertical divider between logical groups in the toolbar. */
+.toolbar-tools-separator {
+	display: inline-block;
+	width: 1px;
+	height: 20px;
+	background: rgba(255, 255, 255, 0.2);
+	margin: 0 4px;
 }
 
 .tool-btn {
@@ -217,12 +228,25 @@ html, body {
 }
 
 #canvas[data-tool="select"] { cursor: default; }
-#canvas[data-tool="arrow"]  { cursor: crosshair; }
+#canvas[data-tool="arrow"]         { cursor: crosshair; }
+#canvas[data-tool="biarrow"]       { cursor: crosshair; }
 #canvas[data-tool="rectangle"],
 #canvas[data-tool="square"],
 #canvas[data-tool="circle"],
 #canvas[data-tool="ellipse"],
+#canvas[data-tool="triangle"],
+#canvas[data-tool="diamond"],
+#canvas[data-tool="parallelogram"],
+#canvas[data-tool="hexagon"],
+#canvas[data-tool="cylinder"],
+#canvas[data-tool="cloud"],
+#canvas[data-tool="card-shape"],
+#canvas[data-tool="callout"],
+#canvas[data-tool="document"],
 #canvas[data-tool="line"],
+#canvas[data-tool="line-dashed"],
+#canvas[data-tool="line-dotted"],
+#canvas[data-tool="text"],
 #canvas[data-tool="pen"] { cursor: crosshair; }
 
 /* Right-click context menu over the canvas. Position is set inline. */

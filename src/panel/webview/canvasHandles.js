@@ -38,6 +38,7 @@
 	function getElementHandles(e) {
 		switch (e.type) {
 			case 'rectangle':
+			case 'shape':
 			case 'noteCard':
 			case 'todoCard':
 				return boxHandles(e.x, e.y, e.w, e.h);

@@ -14,8 +14,11 @@ export const CANVAS_METADATA_ID = 'joplin-canvas-data';
 export const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
 export const SVG_VERSION = '1.1';
 
-/** id of the arrowhead marker definition. */
+/** id of the arrowhead marker definition (used for line end). */
 export const ARROWHEAD_ID = 'canvas-arrowhead';
+
+/** id of the arrowhead marker used at the line start (bidirectional). */
+export const ARROWHEAD_START_ID = 'canvas-arrowhead-start';
 
 // ---- card geometry --------------------------------------------------------
 

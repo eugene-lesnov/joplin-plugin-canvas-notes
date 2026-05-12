@@ -20,6 +20,7 @@
 	const Geometry = window.CanvasNotes && window.CanvasNotes.Geometry;
 	const Handles = window.CanvasNotes && window.CanvasNotes.Handles;
 	const TextWrap = window.CanvasNotes && window.CanvasNotes.TextWrap;
+	const ShapeGeometry = window.CanvasNotes && window.CanvasNotes.ShapeGeometry;
 
 	function t(key, fallback) {
 		const i18n = window.CanvasNotes && window.CanvasNotes.t;
@@ -28,6 +29,7 @@
 
 	const SVG_NS = 'http://www.w3.org/2000/svg';
 	const ARROWHEAD_ID = 'canvas-arrowhead';
+	const ARROWHEAD_START_ID = 'canvas-arrowhead-start';
 	const SELECTION_LAYER_ID = 'selection-overlay';
 	const ELEMENTS_LAYER_ID = 'elements-layer';
 
@@ -44,6 +46,9 @@
 		const defs = document.createElementNS(SVG_NS, 'defs');
 		defs.innerHTML =
 			`<marker id="${ARROWHEAD_ID}" viewBox="0 0 10 10" refX="9" refY="5" ` +
+			`markerWidth="8" markerHeight="8" orient="auto-start-reverse">` +
+			`<path d="M 0 0 L 10 5 L 0 10 z" fill="context-stroke"/></marker>` +
+			`<marker id="${ARROWHEAD_START_ID}" viewBox="0 0 10 10" refX="9" refY="5" ` +
 			`markerWidth="8" markerHeight="8" orient="auto-start-reverse">` +
 			`<path d="M 0 0 L 10 5 L 0 10 z" fill="context-stroke"/></marker>`;
 		return defs;
@@ -95,16 +100,85 @@
 		return node;
 	}
 
-	function renderSegment(e, withArrow) {
+	/**
+	 * Stroke-dasharray pattern for a given line style. Mirrors
+	 * `dashArrayFor` in src/canvas/svgRenderers.ts so the in-app and the
+	 * exported SVG dashes look identical.
+	 */
+	function dashArrayFor(style, strokeWidth) {
+		if (style === 'dashed') {
+			const u = Math.max(2, strokeWidth * 3);
+			return `${u} ${u * 0.6}`;
+		}
+		if (style === 'dotted') {
+			const u = Math.max(1, strokeWidth);
+			return `${u} ${u * 2}`;
+		}
+		return null;
+	}
+
+	/**
+	 * Unified renderer for arrow/line elements. The visual is driven by
+	 * `strokeStyle`, `startArrow`, `endArrow` rather than the type alone,
+	 * so a single function handles solid/dashed/dotted and one-way /
+	 * bidirectional / unmarked variants.
+	 */
+	function renderSegment(e) {
+		const startArrow = e.startArrow || 'none';
+		const endArrow = e.endArrow || (e.type === 'arrow' ? 'arrow' : 'none');
+		const strokeStyle = e.strokeStyle || 'solid';
+
 		const node = el('line', {
 			x1: e.from.x, y1: e.from.y,
 			x2: e.to.x,   y2: e.to.y,
 			stroke: e.stroke,
 			'stroke-width': e.strokeWidth,
 		});
-		if (withArrow) node.setAttribute('marker-end', `url(#${ARROWHEAD_ID})`);
-		else node.setAttribute('stroke-linecap', 'round');
+		if (endArrow === 'arrow') node.setAttribute('marker-end', `url(#${ARROWHEAD_ID})`);
+		if (startArrow === 'arrow') node.setAttribute('marker-start', `url(#${ARROWHEAD_START_ID})`);
+		const dash = dashArrayFor(strokeStyle, e.strokeWidth);
+		if (dash) node.setAttribute('stroke-dasharray', dash);
+		if (strokeStyle === 'solid') node.setAttribute('stroke-linecap', 'round');
 		return node;
+	}
+
+	/**
+	 * Renders a unified shape element. Dispatches through ShapeGeometry
+	 * for the actual path/polygon math. Cylinder is special: it produces
+	 * a body path plus a top ellipse for a visible rim.
+	 */
+	function renderShape(e) {
+		if (!ShapeGeometry) return null;
+		const draw = ShapeGeometry.shapeDraw(e.shapeType, { x: e.x, y: e.y, w: e.w, h: e.h });
+		if (!draw) return null;
+
+		const applyStyle = (node) => {
+			node.setAttribute('fill', e.fill);
+			node.setAttribute('stroke', e.stroke);
+			node.setAttribute('stroke-width', String(e.strokeWidth));
+		};
+
+		if (draw.kind === 'polygon') {
+			const node = el('polygon', { points: draw.points });
+			applyStyle(node);
+			return node;
+		}
+		if (draw.kind === 'path') {
+			const node = el('path', { d: draw.d });
+			applyStyle(node);
+			return node;
+		}
+		// Cylinder: filled body + top rim outline.
+		const g = el('g');
+		const body = el('path', { d: draw.body });
+		applyStyle(body);
+		g.appendChild(body);
+		const rim = el('ellipse', {
+			cx: draw.top.cx, cy: draw.top.cy, rx: draw.top.rx, ry: draw.top.ry,
+			fill: 'none', stroke: e.stroke, 'stroke-width': e.strokeWidth,
+		});
+		g.appendChild(rim);
+		return g;
 	}
 
 	function freehandPathData(points) {
@@ -260,8 +334,9 @@
 			case 'square':    return renderRectLike(e);
 			case 'circle':    return renderCircle(e);
 			case 'ellipse':   return renderEllipse(e);
-			case 'arrow':     return renderSegment(e, true);
-			case 'line':      return renderSegment(e, false);
+			case 'shape':     return renderShape(e);
+			case 'arrow':
+			case 'line':      return renderSegment(e);
 			case 'freehand':  return renderFreehand(e);
 			case 'noteCard':
 			case 'todoCard':  return renderCard(e);

@@ -15,18 +15,21 @@ import {
 	LineElement,
 	NoteCardElement,
 	RectangleElement,
+	ShapeElement,
 	SquareElement,
 	TextElement,
 	TodoCardElement,
 } from './canvasTypes';
 import {
 	ARROWHEAD_ID,
+	ARROWHEAD_START_ID,
 	CARD_BODY_FONT_SIZE,
 	CARD_TITLE_FONT_SIZE,
 	CARD_TITLE_HEIGHT,
 	CARD_TITLE_MAX_CHARS,
 	CARD_TITLE_PAD_X,
 } from './svgConstants';
+import { shapeDraw } from './shapeGeometry';
 import { charsPerWidth, clampTitle, TEXT_LINE_HEIGHT_RATIO, wrapByWidth, wrapText } from './textWrap';
 import { formatNumber as num, safeText } from './xmlEscape';
 
@@ -64,19 +67,78 @@ function renderEllipse(e: EllipseElement): string {
 	);
 }
 
-function renderArrow(e: ArrowElement): string {
-	return (
-		`<line x1="${num(e.from.x)}" y1="${num(e.from.y)}" x2="${num(e.to.x)}" y2="${num(e.to.y)}"` +
-		` stroke="${safeText(e.stroke)}" stroke-width="${num(e.strokeWidth)}"` +
-		` marker-end="url(#${ARROWHEAD_ID})"/>`
-	);
+/**
+ * Renders any element of the unified shape model. Each ShapeKind is
+ * dispatched to a path/polygon description from `shapeGeometry.ts`.
+ * Negative width/height are gracefully handled because the geometry
+ * helpers operate on the absolute bounds (renderer normalizes here).
+ */
+function renderShape(e: ShapeElement): string {
+	const x = e.w >= 0 ? e.x : e.x + e.w;
+	const y = e.h >= 0 ? e.y : e.y + e.h;
+	const w = Math.abs(e.w);
+	const h = Math.abs(e.h);
+	const fill = safeText(e.fill);
+	const stroke = safeText(e.stroke);
+	const sw = num(e.strokeWidth);
+	const style = ` fill="${fill}" stroke="${stroke}" stroke-width="${sw}"`;
+
+	const draw = shapeDraw(e.shapeType, { x, y, w, h });
+	if (draw.kind === 'polygon') {
+		return `<polygon points="${draw.points}"${style}/>`;
+	}
+	if (draw.kind === 'path') {
+		return `<path d="${draw.d}"${style}/>`;
+	}
+	// Cylinder: filled body + visible top rim (stroked only).
+	const body = `<path d="${draw.body}"${style}/>`;
+	const top = draw.top;
+	const rim =
+		`<ellipse cx="${num(top.cx)}" cy="${num(top.cy)}" rx="${num(top.rx)}" ry="${num(top.ry)}"` +
+		` fill="none" stroke="${stroke}" stroke-width="${sw}"/>`;
+	return `<g>${body}${rim}</g>`;
 }
 
-function renderLine(e: LineElement): string {
+/**
+ * Stroke-dasharray pattern for a given line style. Scaled by stroke
+ * width so the visual rhythm stays consistent across thin and thick
+ * strokes. Returns null for solid (default) so the attribute is omitted.
+ */
+function dashArrayFor(style: 'solid' | 'dashed' | 'dotted', strokeWidth: number): string | null {
+	if (style === 'dashed') {
+		const u = Math.max(2, strokeWidth * 3);
+		return `${num(u)} ${num(u * 0.6)}`;
+	}
+	if (style === 'dotted') {
+		const u = Math.max(1, strokeWidth);
+		return `${num(u)} ${num(u * 2)}`;
+	}
+	return null;
+}
+
+/**
+ * Unified renderer for arrow/line elements. The visual is fully driven
+ * by `strokeStyle`, `startArrow`, `endArrow` rather than the legacy
+ * type discriminator, so a single function covers solid/dashed/dotted
+ * and one-way / bidirectional / unmarked variants.
+ */
+function renderLineLike(e: ArrowElement | LineElement): string {
+	const startArrow = e.startArrow ?? 'none';
+	const endArrow = e.endArrow ?? (e.type === 'arrow' ? 'arrow' : 'none');
+	const strokeStyle = e.strokeStyle ?? 'solid';
+
+	const markerStart = startArrow === 'arrow' ? ` marker-start="url(#${ARROWHEAD_START_ID})"` : '';
+	const markerEnd = endArrow === 'arrow' ? ` marker-end="url(#${ARROWHEAD_ID})"` : '';
+	const dash = dashArrayFor(strokeStyle, e.strokeWidth);
+	const dashAttr = dash ? ` stroke-dasharray="${dash}"` : '';
+	// Round caps look great for solid lines but make dotted patterns merge
+	// into a single dash; use default (butt) caps for dashed/dotted.
+	const linecap = strokeStyle === 'solid' ? ' stroke-linecap="round"' : '';
+
 	return (
 		`<line x1="${num(e.from.x)}" y1="${num(e.from.y)}" x2="${num(e.to.x)}" y2="${num(e.to.y)}"` +
 		` stroke="${safeText(e.stroke)}" stroke-width="${num(e.strokeWidth)}"` +
-		` stroke-linecap="round"/>`
+		`${linecap}${dashAttr}${markerStart}${markerEnd}/>`
 	);
 }
 
@@ -211,8 +273,9 @@ export function renderElement(e: CanvasElement): string {
 		case 'square':    return renderSquare(e);
 		case 'circle':    return renderCircle(e);
 		case 'ellipse':   return renderEllipse(e);
-		case 'arrow':     return renderArrow(e);
-		case 'line':      return renderLine(e);
+		case 'shape':     return renderShape(e);
+		case 'arrow':     return renderLineLike(e);
+		case 'line':      return renderLineLike(e);
 		case 'freehand':  return renderFreehand(e);
 		case 'noteCard':  return renderNoteCard(e);
 		case 'todoCard':  return renderTodoCard(e);

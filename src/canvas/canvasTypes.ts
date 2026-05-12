@@ -11,12 +11,32 @@ export type ElementType =
 	| 'square'
 	| 'circle'
 	| 'ellipse'
+	| 'shape'
 	| 'arrow'
 	| 'line'
 	| 'freehand'
 	| 'noteCard'
 	| 'todoCard'
 	| 'text';
+
+/**
+ * Sub-discriminator for the unified shape model.
+ *
+ * The unified shape covers IT/diagram primitives that all share the same
+ * box-like bounds (x, y, w, h). Legacy types ('rectangle', 'square',
+ * 'circle', 'ellipse') predate this model and are kept for backward
+ * compatibility. New shape kinds must be added here.
+ */
+export type ShapeKind =
+	| 'diamond'
+	| 'parallelogram'
+	| 'hexagon'
+	| 'triangle'
+	| 'cylinder'
+	| 'cloud'
+	| 'card'
+	| 'callout'
+	| 'document';
 
 /** Common fields for every element. */
 export interface BaseElement {
@@ -74,6 +94,21 @@ export interface EllipseElement extends BaseElement, ShapeStyle {
 }
 
 /**
+ * Unified shape element: a box-bounded primitive whose visual is
+ * determined by `shapeType`. Adding a new diagram shape requires only
+ * extending ShapeKind and the renderer dispatch; geometry, hit-test,
+ * resize and selection handles work uniformly across all kinds.
+ */
+export interface ShapeElement extends BaseElement, ShapeStyle {
+	type: 'shape';
+	shapeType: ShapeKind;
+	x: number;
+	y: number;
+	w: number;
+	h: number;
+}
+
+/**
  * Arrow endpoint. Either a free point (x,y) or an anchor on another
  * element (attachedTo); when attachedTo is set, x/y are the last cached
  * coordinates and may be recomputed on render.
@@ -84,12 +119,31 @@ export interface ArrowEndpoint {
 	attachedTo?: string;
 }
 
+/** Stroke dash style for line-like elements. */
+export type LineStrokeStyle = 'solid' | 'dashed' | 'dotted';
+
+/** Arrowhead presence on a line endpoint. */
+export type LineArrowKind = 'none' | 'arrow';
+
+/**
+ * Common fields for arrow/line elements. Both share endpoints, stroke
+ * style and optional arrowhead markers on each end. The legacy `type`
+ * discriminator stays (line vs arrow) for backward compatibility, but
+ * real visual behavior is driven by `startArrow` / `endArrow` /
+ * `strokeStyle`. Defaults applied on load:
+ *   - strokeStyle: 'solid'
+ *   - startArrow:  'none'
+ *   - endArrow:    'arrow' if type === 'arrow', otherwise 'none'
+ */
 export interface ArrowElement extends BaseElement {
 	type: 'arrow';
 	from: ArrowEndpoint;
 	to: ArrowEndpoint;
 	stroke: string;
 	strokeWidth: number;
+	strokeStyle?: LineStrokeStyle;
+	startArrow?: LineArrowKind;
+	endArrow?: LineArrowKind;
 }
 
 /** Plain line (no marker). Same shape as ArrowElement but visually undecorated. */
@@ -99,6 +153,9 @@ export interface LineElement extends BaseElement {
 	to: ArrowEndpoint;
 	stroke: string;
 	strokeWidth: number;
+	strokeStyle?: LineStrokeStyle;
+	startArrow?: LineArrowKind;
+	endArrow?: LineArrowKind;
 }
 
 /**
@@ -171,6 +228,7 @@ export type CanvasElement =
 	| SquareElement
 	| CircleElement
 	| EllipseElement
+	| ShapeElement
 	| ArrowElement
 	| LineElement
 	| FreehandElement

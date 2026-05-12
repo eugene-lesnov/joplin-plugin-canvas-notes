@@ -15,6 +15,7 @@ const SUPPORTED_TYPES: ReadonlySet<ElementType> = new Set<ElementType>([
 	'square',
 	'circle',
 	'ellipse',
+	'shape',
 	'arrow',
 	'line',
 	'freehand',
@@ -22,6 +23,21 @@ const SUPPORTED_TYPES: ReadonlySet<ElementType> = new Set<ElementType>([
 	'todoCard',
 	'text',
 ]);
+
+const SUPPORTED_SHAPE_KINDS: ReadonlySet<string> = new Set<string>([
+	'diamond',
+	'parallelogram',
+	'hexagon',
+	'triangle',
+	'cylinder',
+	'cloud',
+	'card',
+	'callout',
+	'document',
+]);
+
+const SUPPORTED_STROKE_STYLES: ReadonlySet<string> = new Set<string>(['solid', 'dashed', 'dotted']);
+const SUPPORTED_ARROW_KINDS: ReadonlySet<string> = new Set<string>(['none', 'arrow']);
 
 function isObject(v: unknown): v is Record<string, unknown> {
 	return typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -75,6 +91,14 @@ function validateElement(raw: unknown): asserts raw is CanvasElement {
 			if (!isFiniteNumber(raw.rx) || !isFiniteNumber(raw.ry)) throw new Error('ellipse: rx,ry required');
 			validateShapeStyle(raw);
 			break;
+		case 'shape':
+			if (!isString(raw.shapeType) || !SUPPORTED_SHAPE_KINDS.has(raw.shapeType)) {
+				throw new Error(`shape.shapeType is unsupported: ${String(raw.shapeType)}`);
+			}
+			if (!isFiniteNumber(raw.x) || !isFiniteNumber(raw.y)) throw new Error('shape: x,y required');
+			if (!isFiniteNumber(raw.w) || !isFiniteNumber(raw.h)) throw new Error('shape: w,h required');
+			validateShapeStyle(raw);
+			break;
 		case 'arrow':
 		case 'line': {
 			const kind = raw.type;
@@ -85,6 +109,15 @@ function validateElement(raw: unknown): asserts raw is CanvasElement {
 			if (!isFiniteNumber(t.x) || !isFiniteNumber(t.y)) throw new Error(`${kind}.to: x,y required`);
 			if (!isString(raw.stroke)) throw new Error(`${kind}.stroke required`);
 			if (!isFiniteNumber(raw.strokeWidth)) throw new Error(`${kind}.strokeWidth required`);
+			if (raw.strokeStyle !== undefined && !SUPPORTED_STROKE_STYLES.has(String(raw.strokeStyle))) {
+				throw new Error(`${kind}.strokeStyle must be solid|dashed|dotted`);
+			}
+			if (raw.startArrow !== undefined && !SUPPORTED_ARROW_KINDS.has(String(raw.startArrow))) {
+				throw new Error(`${kind}.startArrow must be none|arrow`);
+			}
+			if (raw.endArrow !== undefined && !SUPPORTED_ARROW_KINDS.has(String(raw.endArrow))) {
+				throw new Error(`${kind}.endArrow must be none|arrow`);
+			}
 			break;
 		}
 		case 'freehand': {

@@ -463,24 +463,43 @@
 			return;
 		}
 
-		if (activeTool === 'select') {
+		const toolDef = Toolbar.getToolDef ? Toolbar.getToolDef(activeTool) : null;
+		// Fall back to a hardcoded mapping when the toolbar lookup is
+		// unavailable (defensive: keeps legacy tool ids working even if the
+		// toolbar module fails to load).
+		const toolKind = toolDef
+			? toolDef.kind
+			: (activeTool === 'select' ? 'select'
+				: activeTool === 'pen' ? 'pen'
+					: activeTool === 'text' ? 'text'
+						: (activeTool === 'arrow' || activeTool === 'line') ? 'line'
+							: (activeTool === 'square' || activeTool === 'circle') ? 'legacy'
+								: null);
+
+		if (toolKind === 'select') {
 			handleSelectPointerDown(evt, p);
 			return;
 		}
 
-		if (activeTool === 'arrow' || activeTool === 'line') {
-			dragState = { mode: 'segment-drawing', kind: activeTool, start: p, current: p };
-			TempPreview.showSegment(svg(), activeTool, p, p);
+		if (toolKind === 'line') {
+			// All line variants (solid/dashed/dotted, arrow/bidir/plain) flow
+			// through the same drag-draw gesture; lineSpec carries the visual.
+			dragState = {
+				mode: 'segment-drawing',
+				lineSpec: toolDef.lineSpec,
+				start: p, current: p,
+			};
+			TempPreview.showSegment(svg(), toolDef.lineSpec, p, p);
 			return;
 		}
 
-		if (activeTool === 'pen') {
+		if (toolKind === 'pen') {
 			dragState = { mode: 'pen-drawing', points: [p] };
 			TempPreview.showFreehand(svg(), dragState.points);
 			return;
 		}
 
-		if (activeTool === 'text') {
+		if (toolKind === 'text') {
 			// Start a drag-create gesture: a small drag becomes a default-sized
 			// box on mouse-up; a real drag yields a custom-sized box. The mode
 			// is mutually exclusive with select/move/resize via dragState.
@@ -494,13 +513,19 @@
 			return;
 		}
 
-		if (activeTool === 'square' || activeTool === 'circle') {
+		if (toolKind === 'legacy' || toolKind === 'shape') {
 			// Drag-create gesture: a small drag (or plain click) yields a
 			// default-sized shape centered on the click point; a real drag
 			// produces a shape that exactly fills the user-drawn box.
+			// Preview kind: legacy 'circle' draws an ellipse preview, everything
+			// else uses a dashed bbox rectangle (cheap, unambiguous).
+			const previewKind = activeTool === 'circle' ? 'circle' : 'rect';
 			dragState = {
 				mode: 'shape-creating',
-				kind: activeTool,
+				toolId: activeTool,
+				toolKind: toolKind,
+				shapeType: toolDef && toolDef.shapeType ? toolDef.shapeType : null,
+				previewKind: previewKind,
 				start: p,
 				current: p,
 				startClientX: evt.clientX,
@@ -665,7 +690,7 @@
 				return;
 			case 'segment-drawing':
 				dragState.current = p;
-				TempPreview.showSegment(svg(), dragState.kind, dragState.start, p);
+				TempPreview.showSegment(svg(), dragState.lineSpec, dragState.start, p);
 				return;
 			case 'pen-drawing':
 				appendPenPoint(p);
@@ -677,7 +702,7 @@
 				return;
 			case 'shape-creating':
 				dragState.current = p;
-				TempPreview.showShape(svg(), dragState.kind, dragState.start, p);
+				TempPreview.showShape(svg(), dragState.previewKind, dragState.start, p);
 				return;
 		}
 	}
@@ -710,8 +735,8 @@
 				const dx = finished.current.x - finished.start.x;
 				const dy = finished.current.y - finished.start.y;
 				if (Math.hypot(dx, dy) < C.DRAG_THRESHOLD_PX) return;
-				const factory = finished.kind === 'arrow' ? Factories.makeArrow : Factories.makeLine;
-				addElement(factory(finished.start, finished.current, nextZ()));
+				const spec = finished.lineSpec || { type: 'line' };
+				addElement(Factories.makeSegment(spec.type, finished.start, finished.current, nextZ(), spec));
 				return;
 			}
 			case 'pen-drawing': {
@@ -735,28 +760,38 @@
 	}
 
 	/**
-	 * Materializes the drag-created rectangle/ellipse. A drag larger than
-	 * the min threshold along both axes uses the user-drawn bounds; a
-	 * smaller drag or plain click falls back to a default-sized shape
-	 * centered on the click point. This mirrors the text-create UX so
-	 * single clicks remain useful.
+	 * Materializes the drag-created shape (legacy or unified). A drag
+	 * larger than the min threshold along both axes uses the user-drawn
+	 * bounds; a smaller drag or plain click falls back to a default-sized
+	 * shape centered on the click point. Mirrors text-create UX so single
+	 * clicks remain useful.
 	 */
 	function finishShapeCreate(state) {
 		const from = state.start;
 		const to = state.current;
 		const rawW = Math.abs(to.x - from.x);
 		const rawH = Math.abs(to.y - from.y);
-
 		const hasDraggedSize = rawW >= C.SHAPE_DRAG_MIN_SIZE && rawH >= C.SHAPE_DRAG_MIN_SIZE;
+		const bounds = {
+			x: Math.min(from.x, to.x),
+			y: Math.min(from.y, to.y),
+			width: rawW,
+			height: rawH,
+		};
 
-		if (state.kind === 'square') {
+		// Unified shape (diamond, hexagon, cylinder, ...).
+		if (state.toolKind === 'shape' && state.shapeType) {
 			if (hasDraggedSize) {
-				const bounds = {
-					x: Math.min(from.x, to.x),
-					y: Math.min(from.y, to.y),
-					width: rawW,
-					height: rawH,
-				};
+				addElement(Factories.makeShapeFromBounds(state.shapeType, bounds, nextZ()));
+			} else {
+				addElement(Factories.makeShape(state.shapeType, from, nextZ()));
+			}
+			return;
+		}
+
+		// Legacy shapes: square (rectangle model) and circle (ellipse model).
+		if (state.toolId === 'square' || state.toolKind === 'legacy' && state.toolId === 'square') {
+			if (hasDraggedSize) {
 				addElement(Factories.makeRectangleFromBounds(bounds, nextZ()));
 			} else {
 				addElement(Factories.makeRectangle(from, nextZ()));
@@ -764,14 +799,8 @@
 			return;
 		}
 
-		if (state.kind === 'circle') {
+		if (state.toolId === 'circle') {
 			if (hasDraggedSize) {
-				const bounds = {
-					x: Math.min(from.x, to.x),
-					y: Math.min(from.y, to.y),
-					width: rawW,
-					height: rawH,
-				};
 				addElement(Factories.makeEllipseFromBounds(bounds, nextZ()));
 			} else {
 				addElement(Factories.makeEllipse(from, nextZ()));

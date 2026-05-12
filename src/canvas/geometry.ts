@@ -28,6 +28,8 @@ export function elementBounds(e: CanvasElement): Bounds {
 			return { x: e.cx - e.r, y: e.cy - e.r, w: e.r * 2, h: e.r * 2 };
 		case 'ellipse':
 			return { x: e.cx - e.rx, y: e.cy - e.ry, w: e.rx * 2, h: e.ry * 2 };
+		case 'shape':
+			return { x: e.x, y: e.y, w: e.w, h: e.h };
 		case 'arrow':
 		case 'line': {
 			const x = Math.min(e.from.x, e.to.x);
