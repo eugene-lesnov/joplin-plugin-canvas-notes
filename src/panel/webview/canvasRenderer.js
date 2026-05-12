@@ -188,13 +188,18 @@
 	}
 
 	/**
-	 * Renders a single ShapePiece into an SVG node. `fillOverride === 'none'`
-	 * means "stroke-only"; line pieces always have no fill.
+	 * Renders a single ShapePiece into an SVG node.
+	 * Style overrides on the piece:
+	 *   fillOverride === 'none' - stroke-only piece (no fill);
+	 *   noStroke                - filled piece without an outline;
+	 *   strokeWidthMul          - multiplier on the base stroke width.
 	 */
 	function renderShapePiece(p, e) {
 		const pieceFill = p.type === 'line' ? 'none'
 			: (p.fillOverride === 'none' ? 'none' : e.fill);
-		const common = { fill: pieceFill, stroke: e.stroke, 'stroke-width': e.strokeWidth };
+		const pieceStroke = p.noStroke ? 'none' : e.stroke;
+		const pieceSw = e.strokeWidth * (p.strokeWidthMul || 1);
+		const common = { fill: pieceFill, stroke: pieceStroke, 'stroke-width': pieceSw };
 		switch (p.type) {
 			case 'rect': {
 				const attrs = Object.assign({ x: p.x, y: p.y, width: p.w, height: p.h }, common);

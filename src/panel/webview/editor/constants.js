@@ -55,7 +55,7 @@
 		 */
 		STICKY_TOOLS: new Set([
 			'line', 'arrow', 'biarrow',
-			'line-dashed', 'line-dotted', 'arrow-dashed',
+			'line-dashed', 'line-dotted', 'line-thick', 'arrow-dashed',
 			'arrow-inheritance', 'arrow-realization',
 			'arrow-aggregation', 'arrow-composition', 'arrow-dependency',
 			'pen',

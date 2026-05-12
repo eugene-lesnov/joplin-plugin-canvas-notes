@@ -25,23 +25,19 @@ const SUPPORTED_TYPES: ReadonlySet<ElementType> = new Set<ElementType>([
 ]);
 
 const SUPPORTED_SHAPE_KINDS: ReadonlySet<string> = new Set<string>([
-	'diamond',
-	'parallelogram',
-	'hexagon',
-	'triangle',
-	'cylinder',
-	'cloud',
-	'card',
-	'callout',
-	'document',
-	'roundedRectangle',
-	'terminator',
-	'manualInput',
-	'predefinedProcess',
-	'server',
-	'actor',
-	'queue',
-	'star',
+	// Primitives.
+	'rectangle', 'ellipse', 'roundedRectangle',
+	'triangle', 'diamond', 'parallelogram', 'trapezoid',
+	'hexagon', 'pentagon', 'star',
+	// Flowchart.
+	'terminator', 'document', 'multipleDocuments',
+	'manualInput', 'predefinedProcess', 'delay', 'offPageConnector',
+	// Architecture.
+	'cylinder', 'cloud', 'queue', 'server', 'actor',
+	'browser', 'mobile', 'laptop', 'desktop', 'container',
+	'gear', 'loadBalancer', 'firewall', 'lock', 'folder',
+	// Notes.
+	'card', 'callout', 'stickyNote',
 ]);
 
 const SUPPORTED_STROKE_STYLES: ReadonlySet<string> = new Set<string>(['solid', 'dashed', 'dotted']);

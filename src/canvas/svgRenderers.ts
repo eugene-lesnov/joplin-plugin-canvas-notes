@@ -73,13 +73,21 @@ function renderEllipse(e: EllipseElement): string {
 	);
 }
 
-/** Renders a single ShapePiece, using the shape's fill/stroke/sw. */
-function renderShapePiece(p: ShapePiece, fill: string, stroke: string, sw: string): string {
+/**
+ * Renders a single ShapePiece, using the shape's fill/stroke/sw.
+ * Style overrides on the piece:
+ *   - fillOverride === 'none' : draw with no fill;
+ *   - noStroke                : draw with the shape's fill but no stroke;
+ *   - strokeWidthMul          : multiply the base stroke width.
+ */
+function renderShapePiece(p: ShapePiece, fill: string, stroke: string, strokeWidth: number): string {
 	// `line` pieces never have a fill; everything else uses the shape's fill
-	// unless explicitly overridden (e.g. divider rectangles inside a compound).
+	// unless explicitly overridden.
 	const pieceFill = p.type === 'line' ? 'none'
-		: ('fillOverride' in p && p.fillOverride === 'none' ? 'none' : fill);
-	const style = ` fill="${pieceFill}" stroke="${stroke}" stroke-width="${sw}"`;
+		: (p.fillOverride === 'none' ? 'none' : fill);
+	const pieceStroke = p.noStroke ? 'none' : stroke;
+	const pieceSw = num(strokeWidth * (p.strokeWidthMul || 1));
+	const style = ` fill="${pieceFill}" stroke="${pieceStroke}" stroke-width="${pieceSw}"`;
 	switch (p.type) {
 		case 'rect': {
 			const rx = p.rx !== undefined ? ` rx="${num(p.rx)}"` : '';
@@ -120,8 +128,12 @@ function renderShape(e: ShapeElement): string {
 			return `<polygon points="${draw.points}"${style}/>`;
 		case 'path':
 			return `<path d="${draw.d}"${style}/>`;
-		case 'rect':
-			return `<rect x="${num(draw.x)}" y="${num(draw.y)}" width="${num(draw.w)}" height="${num(draw.h)}" rx="${num(draw.rx)}"${style}/>`;
+		case 'rect': {
+			// rx=0 case is the plain rectangle; omit the attribute for
+			// cleaner SVG output.
+			const rxAttr = draw.rx > 0 ? ` rx="${num(draw.rx)}"` : '';
+			return `<rect x="${num(draw.x)}" y="${num(draw.y)}" width="${num(draw.w)}" height="${num(draw.h)}"${rxAttr}${style}/>`;
+		}
 		case 'cylinder': {
 			// Cylinder: filled body + visible top rim (stroked only).
 			const body = `<path d="${draw.body}"${style}/>`;
@@ -132,7 +144,7 @@ function renderShape(e: ShapeElement): string {
 			return `<g>${body}${rim}</g>`;
 		}
 		case 'compound': {
-			const pieces = draw.pieces.map((p) => renderShapePiece(p, fill, stroke, sw)).join('');
+			const pieces = draw.pieces.map((p) => renderShapePiece(p, fill, stroke, e.strokeWidth)).join('');
 			return `<g>${pieces}</g>`;
 		}
 	}

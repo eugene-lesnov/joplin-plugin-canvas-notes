@@ -28,23 +28,45 @@ export type ElementType =
  * compatibility. New shape kinds must be added here.
  */
 export type ShapeKind =
+	// Primitives + basic geometric forms.
+	| 'rectangle'
+	| 'ellipse'
+	| 'roundedRectangle'
+	| 'triangle'
 	| 'diamond'
 	| 'parallelogram'
+	| 'trapezoid'
 	| 'hexagon'
-	| 'triangle'
-	| 'cylinder'
-	| 'cloud'
-	| 'card'
-	| 'callout'
-	| 'document'
-	| 'roundedRectangle'
+	| 'pentagon'
+	| 'star'
+	// Flowchart-specific.
 	| 'terminator'
+	| 'document'
+	| 'multipleDocuments'
 	| 'manualInput'
 	| 'predefinedProcess'
+	| 'delay'
+	| 'offPageConnector'
+	// Architecture (servers, services, networking).
+	| 'cylinder'
+	| 'cloud'
+	| 'queue'
 	| 'server'
 	| 'actor'
-	| 'queue'
-	| 'star';
+	| 'browser'
+	| 'mobile'
+	| 'laptop'
+	| 'desktop'
+	| 'container'
+	| 'gear'
+	| 'loadBalancer'
+	| 'firewall'
+	| 'lock'
+	| 'folder'
+	// Notes / annotations.
+	| 'card'
+	| 'callout'
+	| 'stickyNote';
 
 /** Common fields for every element. */
 export interface BaseElement {

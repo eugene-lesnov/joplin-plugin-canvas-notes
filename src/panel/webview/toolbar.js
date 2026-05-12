@@ -6,21 +6,23 @@
  *
  *   [Select] | [Shapes ▼] [Lines ▼] | [Pen] [Text]
  *
- * - Shapes and Lines are split-button dropdowns. The icon shows the last
- *   tool picked from that group; clicking the caret (or the entire button
- *   when the group's current tool is already active) opens a popover with
- *   the full palette grouped into sub-sections.
- * - Active tool is highlighted both on the dropdown button (when it
- *   belongs to that group) and inside the open popover.
+ * Shapes and Lines are split-button dropdowns: the button shows the last
+ * tool picked from that group, the caret opens a searchable popover with
+ * the full palette grouped into sub-sections.
  *
  * Tool model:
  *   - id           - canonical tool id used by the editor controller;
  *   - kind         - 'select' | 'shape' | 'legacy' | 'line' | 'pen' | 'text';
  *   - shapeType    - ShapeKind for kind === 'shape';
- *   - lineSpec     - { type, strokeStyle, startArrow, endArrow } for 'line'.
+ *   - lineSpec     - { type, strokeStyle, startArrow, endArrow } for 'line';
+ *   - aliasOf      - if set, this tile reuses the same shapeType as another
+ *                    tool but appears in the popover under a different name
+ *                    (e.g. Process is an alias of Rectangle inside Flowchart).
  *
- * Icons are inline SVG strings (viewBox 0 0 16 16, currentColor). No
- * external assets and no icon library.
+ * Icons are derived automatically for shape tools by rendering the
+ * shape's geometry into a 16x16 viewBox at construction time. This keeps
+ * the icon visually identical to the placed shape and removes the need
+ * to maintain a duplicate hand-drawn icon per shape.
  *
  * Exposed as global CanvasNotes.Toolbar.
  */
@@ -28,220 +30,288 @@
 (function () {
 	'use strict';
 
+	const ShapeGeometry = window.CanvasNotes && window.CanvasNotes.ShapeGeometry;
+
 	function t(key, fallback) {
 		const i18n = window.CanvasNotes && window.CanvasNotes.t;
 		return typeof i18n === 'function' ? i18n(key) : fallback;
 	}
 
-	// ---- icons ------------------------------------------------------------
+	// ---- icon builders ---------------------------------------------------
 
-	function svg(inner) {
-		return `<svg viewBox="0 0 16 16" aria-hidden="true">${inner}</svg>`;
-	}
+	const ICON_VIEWBOX = 16;
+	const ICON_INSET = 1.5;     // padding around the shape inside the viewBox
+	const ICON_STROKE = 1.4;
 
 	const NF = 'fill="none"';
 	const ST = 'stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"';
+	const UML_JOIN = 'stroke="currentColor" stroke-width="1.5" stroke-linejoin="miter"';
 
-	const ICON_SELECT = svg(`<path d="M3 2 L13 8 L8 9 L11 14 L9 15 L6 10 L3 13 Z"/>`);
-	const ICON_RECT = svg(`<rect x="3.5" y="3.5" width="9" height="9" ${NF} ${ST}/>`);
-	const ICON_ROUNDED = svg(`<rect x="3" y="4.5" width="10" height="7" rx="2.5" ${NF} ${ST}/>`);
-	const ICON_CIRCLE = svg(`<circle cx="8" cy="8" r="5" ${NF} ${ST}/>`);
-	const ICON_TRIANGLE = svg(`<polygon points="8,3 13.5,13 2.5,13" ${NF} ${ST}/>`);
-	const ICON_DIAMOND = svg(`<polygon points="8,2.5 13.5,8 8,13.5 2.5,8" ${NF} ${ST}/>`);
-	const ICON_PARALLELOGRAM = svg(`<polygon points="5,3 14,3 11,13 2,13" ${NF} ${ST}/>`);
-	const ICON_HEXAGON = svg(`<polygon points="5.5,3 10.5,3 13.5,8 10.5,13 5.5,13 2.5,8" ${NF} ${ST}/>`);
-	const ICON_STAR = svg(`<polygon points="8,2 9.7,6.4 14.5,6.4 10.7,9.3 12.1,13.8 8,11 3.9,13.8 5.3,9.3 1.5,6.4 6.3,6.4" ${NF} ${ST}/>`);
-	const ICON_TERMINATOR = svg(`<rect x="2" y="5" width="12" height="6" rx="3" ${NF} ${ST}/>`);
-	const ICON_MANUAL_INPUT = svg(`<polygon points="2,5.5 14,3 14,13 2,13" ${NF} ${ST}/>`);
-	const ICON_PREDEFINED = svg(
-		`<rect x="2" y="4" width="12" height="8" ${NF} ${ST}/>` +
-		`<line x1="4.2" y1="4" x2="4.2" y2="12" ${NF} ${ST}/>` +
-		`<line x1="11.8" y1="4" x2="11.8" y2="12" ${NF} ${ST}/>`,
+	function svgWrap(inner) {
+		return `<svg viewBox="0 0 ${ICON_VIEWBOX} ${ICON_VIEWBOX}" aria-hidden="true">${inner}</svg>`;
+	}
+
+	/**
+	 * Builds an icon SVG by rendering a ShapeKind into a small viewBox.
+	 * Box dimensions favor a slightly wider-than-tall rectangle so most
+	 * shapes (cards, queues, terminators) read at glance; symmetric shapes
+	 * (circle, diamond, star, BPMN gates) get a square box.
+	 */
+	function shapeIcon(shapeType, squareBox) {
+		if (!ShapeGeometry || !ShapeGeometry.shapeDraw) return svgWrap('');
+		const inset = ICON_INSET;
+		const w = ICON_VIEWBOX - inset * 2;
+		const h = squareBox ? w : w * 0.7;
+		const y = squareBox ? inset : inset + (w - h) / 2;
+		const box = { x: inset, y: y, w: w, h: h };
+		const draw = ShapeGeometry.shapeDraw(shapeType, box);
+		if (!draw) return svgWrap('');
+		// The icon is drawn with stroke=currentColor and no fill so the
+		// silhouette is readable regardless of the toolbar background.
+		const styleAttr = `fill="none" stroke="currentColor" stroke-width="${ICON_STROKE}" stroke-linejoin="round" stroke-linecap="round"`;
+		if (draw.kind === 'polygon') return svgWrap(`<polygon points="${draw.points}" ${styleAttr}/>`);
+		if (draw.kind === 'path') return svgWrap(`<path d="${draw.d}" ${styleAttr}/>`);
+		if (draw.kind === 'rect') {
+			const rxAttr = draw.rx > 0 ? ` rx="${draw.rx}"` : '';
+			return svgWrap(`<rect x="${draw.x}" y="${draw.y}" width="${draw.w}" height="${draw.h}"${rxAttr} ${styleAttr}/>`);
+		}
+		if (draw.kind === 'cylinder') {
+			return svgWrap(
+				`<path d="${draw.body}" ${styleAttr}/>` +
+				`<ellipse cx="${draw.top.cx}" cy="${draw.top.cy}" rx="${draw.top.rx}" ry="${draw.top.ry}" ${styleAttr}/>`,
+			);
+		}
+		if (draw.kind === 'compound') {
+			const parts = [];
+			for (const p of draw.pieces) {
+				const noFill = (p.fillOverride === 'none' || p.noStroke) ? styleAttr : styleAttr;
+				switch (p.type) {
+					case 'rect': {
+						const rx = p.rx !== undefined ? ` rx="${p.rx}"` : '';
+						parts.push(`<rect x="${p.x}" y="${p.y}" width="${p.w}" height="${p.h}"${rx} ${noFill}/>`);
+						break;
+					}
+					case 'ellipse':
+						parts.push(`<ellipse cx="${p.cx}" cy="${p.cy}" rx="${p.rx}" ry="${p.ry}" ${noFill}/>`);
+						break;
+					case 'circle':
+						parts.push(`<circle cx="${p.cx}" cy="${p.cy}" r="${p.r}" ${noFill}/>`);
+						break;
+					case 'polygon':
+						parts.push(`<polygon points="${p.points}" ${noFill}/>`);
+						break;
+					case 'path':
+						parts.push(`<path d="${p.d}" ${noFill}/>`);
+						break;
+					case 'line':
+						parts.push(`<line x1="${p.x1}" y1="${p.y1}" x2="${p.x2}" y2="${p.y2}" ${noFill}/>`);
+						break;
+				}
+			}
+			return svgWrap(parts.join(''));
+		}
+		return svgWrap('');
+	}
+
+	// Specialized icons for non-shape tools.
+	const ICON_SELECT = svgWrap(`<path d="M3 2 L13 8 L8 9 L11 14 L9 15 L6 10 L3 13 Z"/>`);
+	const ICON_PEN = svgWrap(
+		`<path d="M2 11.5 C3.2 7.2, 5.1 6.8, 6.4 9.2 S9.1 12.1, 10.1 8.6 S12.2 3.9, 14 5.2" ${NF} ${ST}/>`,
 	);
-	const ICON_CYLINDER = svg(
-		`<path d="M3 5 V11 C3 12.3 5.2 13 8 13 C10.8 13 13 12.3 13 11 V5" ${NF} ${ST}/>` +
-		`<ellipse cx="8" cy="5" rx="5" ry="2" ${NF} ${ST}/>`,
-	);
-	const ICON_CLOUD = svg(
-		`<path d="M4 11 C2.5 11 2.5 8.5 4 8.5 C4 6 7 6 7.5 8 C8 6.5 11 6.5 11 9 C12.5 9 12.5 11 11 11 Z" ${NF} ${ST}/>`,
-	);
-	const ICON_CARD = svg(
-		`<polygon points="3,3 11,3 13,5 13,13 3,13" ${NF} ${ST}/>` +
-		`<polyline points="11,3 11,5 13,5" ${NF} ${ST}/>`,
-	);
-	const ICON_CALLOUT = svg(
-		`<path d="M3 3 H13 V11 H6 L4 14 V11 H3 Z" ${NF} ${ST}/>`,
-	);
-	const ICON_DOCUMENT = svg(
-		`<path d="M3 3 H13 V11 C11 13 9 10 6.5 12 C5 13 4 11.5 3 11.5 Z" ${NF} ${ST}/>`,
-	);
-	const ICON_SERVER = svg(
-		`<rect x="2.5" y="3" width="11" height="10" rx="1" ${NF} ${ST}/>` +
-		`<line x1="2.5" y1="6.5" x2="13.5" y2="6.5" ${NF} ${ST}/>` +
-		`<line x1="2.5" y1="10" x2="13.5" y2="10" ${NF} ${ST}/>` +
-		`<circle cx="4.5" cy="4.8" r="0.6" fill="currentColor"/>` +
-		`<circle cx="4.5" cy="8.3" r="0.6" fill="currentColor"/>`,
-	);
-	const ICON_ACTOR = svg(
-		`<circle cx="8" cy="4" r="1.6" ${NF} ${ST}/>` +
-		`<line x1="8" y1="5.6" x2="8" y2="10.5" ${NF} ${ST}/>` +
-		`<line x1="4.5" y1="7.5" x2="11.5" y2="7.5" ${NF} ${ST}/>` +
-		`<line x1="8" y1="10.5" x2="5.5" y2="14" ${NF} ${ST}/>` +
-		`<line x1="8" y1="10.5" x2="10.5" y2="14" ${NF} ${ST}/>`,
-	);
-	const ICON_QUEUE = svg(
-		`<path d="M5 4 L13 4 L13 12 L5 12 A2 4 0 0 1 5 4 Z" ${NF} ${ST}/>` +
-		`<ellipse cx="5" cy="8" rx="2" ry="4" ${NF} ${ST}/>`,
+	const ICON_TEXT = svgWrap(
+		`<path d="M3 3 H13 M8 3 V13" ${NF} stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>`,
 	);
 
-	// Line icons
-	const ICON_LINE = svg(`<path d="M2 13 L14 3" ${NF} ${ST}/>`);
-	const ICON_ARROW = svg(`<path d="M2 13 L13 3 M13 3 L8 3 M13 3 L13 8" ${NF} ${ST}/>`);
-	const ICON_BIARROW = svg(
+	// Line icons - drawn horizontally so the line palette reads uniformly.
+	const ICON_LINE = svgWrap(`<path d="M2 8 L14 8" ${NF} ${ST}/>`);
+	const ICON_ARROW = svgWrap(`<path d="M2 8 L13 8 M13 8 L9 5 M13 8 L9 11" ${NF} ${ST}/>`);
+	const ICON_BIARROW = svgWrap(
 		`<path d="M2 8 L14 8" ${NF} ${ST}/>` +
 		`<path d="M5 5 L2 8 L5 11" ${NF} ${ST}/>` +
 		`<path d="M11 5 L14 8 L11 11" ${NF} ${ST}/>`,
 	);
-	const ICON_LINE_DASHED = svg(`<path d="M2 13 L14 3" ${NF} ${ST} stroke-dasharray="3 2"/>`);
-	const ICON_LINE_DOTTED = svg(`<path d="M2 13 L14 3" ${NF} ${ST} stroke-dasharray="1 2.2"/>`);
-	// Dashed arrow icon mirrors the UML connector layout (horizontal
-	// stroke + arrowhead on the right) so the Dependency / Dashed arrow
-	// tiles line up visually with Inheritance / Aggregation / Composition.
-	const ICON_ARROW_DASHED = svg(
+	const ICON_LINE_DASHED = svgWrap(`<path d="M2 8 L14 8" ${NF} ${ST} stroke-dasharray="3 2"/>`);
+	const ICON_LINE_DOTTED = svgWrap(`<path d="M2 8 L14 8" ${NF} ${ST} stroke-dasharray="1 2.2"/>`);
+	const ICON_LINE_THICK = svgWrap(`<path d="M2 8 L14 8" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>`);
+	const ICON_ARROW_DASHED = svgWrap(
 		`<path d="M2 8 L11 8" ${NF} ${ST} stroke-dasharray="2 2"/>` +
-		`<path d="M11 4 L14 8 L11 12" ${NF} ${ST}/>`,
+		`<path d="M11 5 L14 8 L11 11" ${NF} ${ST}/>`,
 	);
-	// UML connector icons.
-	//
-	// All four use the same horizontal layout: a short stroke on the left,
-	// the marker shape on the right with its tail touching the stroke.
-	// `stroke-linejoin="miter"` keeps the triangle / diamond corners sharp
-	// at 16x16 (the default "round" join from `ST` softens them into mush).
-	const UML_JOIN = 'stroke="currentColor" stroke-width="1.5" stroke-linejoin="miter"';
-	const ICON_INHERITANCE = svg(
+	const ICON_INHERITANCE = svgWrap(
 		`<path d="M2 8 L9 8" ${NF} ${ST}/>` +
 		`<polygon points="9,4 14,8 9,12" fill="#ffffff" ${UML_JOIN}/>`,
 	);
-	const ICON_REALIZATION = svg(
+	const ICON_REALIZATION = svgWrap(
 		`<path d="M2 8 L9 8" ${NF} ${ST} stroke-dasharray="2 2"/>` +
 		`<polygon points="9,4 14,8 9,12" fill="#ffffff" ${UML_JOIN}/>`,
 	);
-	const ICON_AGGREGATION = svg(
+	const ICON_AGGREGATION = svgWrap(
 		`<path d="M2 8 L7 8" ${NF} ${ST}/>` +
 		`<polygon points="7,8 10.5,5 14,8 10.5,11" fill="#ffffff" ${UML_JOIN}/>`,
 	);
-	const ICON_COMPOSITION = svg(
+	const ICON_COMPOSITION = svgWrap(
 		`<path d="M2 8 L7 8" ${NF} ${ST}/>` +
 		`<polygon points="7,8 10.5,5 14,8 10.5,11" fill="currentColor" ${UML_JOIN}/>`,
 	);
-	const ICON_PEN = svg(
-		`<path d="M2 11.5 C3.2 7.2, 5.1 6.8, 6.4 9.2 S9.1 12.1, 10.1 8.6 S12.2 3.9, 14 5.2" ${NF} ${ST}/>`,
-	);
-	const ICON_TEXT = svg(`<path d="M3 3 H13 M8 3 V13" ${NF} stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>`);
 
-	// ---- tool definitions ------------------------------------------------
+	// ---- hand-crafted icon overrides ---------------------------------
+
+	// For a few compound shapes (multipleDocuments, predefinedProcess,
+	// server, firewall) the auto-generated icon from the real geometry
+	// produces visually noisy icons at 16x16 - several short parallel
+	// strokes blend together. These overrides are minimalist hand-tuned
+	// glyphs that keep the canvas geometry intact and only replace the
+	// preview shown in the toolbar / popover.
+	const ICON_OVERRIDES = {
+		multipleDocuments: svgWrap(
+			// Single rear sheet outline + front document with wave.
+			`<rect x="5" y="2.5" width="8" height="10" ${NF} ${ST}/>` +
+			`<path d="M3 4.5 H11 V11.5 C9.5 13 7.5 11 5.5 12.2 C4.5 12.8 3.8 11.8 3 11.8 Z" ${NF} ${ST}/>`,
+		),
+		predefinedProcess: svgWrap(
+			// Rect + two vertical bars, drawn as one path so adjacent strokes
+			// share line caps cleanly.
+			`<path d="M2 4 H14 V12 H2 Z M4.5 4 V12 M11.5 4 V12" ${NF} ${ST}/>`,
+		),
+		server: svgWrap(
+			// 1U rack: short wide rect with one divider.
+			`<rect x="2" y="4" width="12" height="8" rx="1" ${NF} ${ST}/>` +
+			`<line x1="2" y1="8" x2="14" y2="8" ${NF} ${ST}/>`,
+		),
+		firewall: svgWrap(
+			// Brick wall with one top vertical + two bottom verticals.
+			`<path d="M2 4 H14 V12 H2 Z M2 8 H14 M8 4 V8 M5 8 V12 M11 8 V12" ${NF} ${ST}/>`,
+		),
+		loadBalancer: svgWrap(
+			// Circle in center, single inbound arrow on the left, two
+			// outbound on the right. Simpler than auto-generated version.
+			`<circle cx="8" cy="8" r="3" ${NF} ${ST}/>` +
+			`<path d="M2 8 L5 8" ${NF} ${ST}/>` +
+			`<path d="M11 8 L13 5" ${NF} ${ST}/>` +
+			`<path d="M11 8 L13 11" ${NF} ${ST}/>`,
+		),
+	};
+
+	// ---- tool catalog ----------------------------------------------------
+
+	function shape(id, shapeType, subgroup, labelKey, fallback, opts) {
+		const o = opts || {};
+		const icon = ICON_OVERRIDES[shapeType] || shapeIcon(shapeType, !!o.squareIcon);
+		return {
+			id,
+			group: 'shapes',
+			subgroup,
+			kind: 'shape',
+			shapeType,
+			labelKey,
+			fallback,
+			icon,
+		};
+	}
+
+	function lineTool(id, subgroup, labelKey, fallback, icon, lineSpec) {
+		return { id, group: 'lines', subgroup, kind: 'line', lineSpec, labelKey, fallback, icon };
+	}
 
 	/**
-	 * Tool catalog. `subgroup` is used inside dropdown popovers to group
-	 * tools under sub-headings (e.g. "Basic" / "Flowchart" / "Infra").
+	 * Full tool catalog. Each entry maps to one tile in the dropdown
+	 * popover; the `setActive` flow uses `id` while `shapeType` / `lineSpec`
+	 * carry the visual properties for actual drawing.
+	 *
+	 * Aliases (Process / Decision / Data / Task / Button etc.) reuse an
+	 * existing `shapeType` but appear in a different sub-section with a
+	 * different label, so the popover navigation matches the user's mental
+	 * model without duplicating geometry.
 	 */
 	const TOOLS = [
-		// Select
+		// Select.
 		{ id: 'select', group: 'select', kind: 'select',
 		  labelKey: 'toolSelect', fallback: 'Select', icon: ICON_SELECT },
 
-		// Shapes - Basic
-		{ id: 'square', group: 'shapes', subgroup: 'basic', kind: 'legacy',
-		  labelKey: 'toolSquare', fallback: 'Rectangle', icon: ICON_RECT },
-		{ id: 'roundedRectangle', group: 'shapes', subgroup: 'basic', kind: 'shape', shapeType: 'roundedRectangle',
-		  labelKey: 'toolRoundedRectangle', fallback: 'Rounded rectangle', icon: ICON_ROUNDED },
-		{ id: 'circle', group: 'shapes', subgroup: 'basic', kind: 'legacy',
-		  labelKey: 'toolCircle', fallback: 'Ellipse', icon: ICON_CIRCLE },
-		{ id: 'triangle', group: 'shapes', subgroup: 'basic', kind: 'shape', shapeType: 'triangle',
-		  labelKey: 'toolTriangle', fallback: 'Triangle', icon: ICON_TRIANGLE },
-		{ id: 'diamond', group: 'shapes', subgroup: 'basic', kind: 'shape', shapeType: 'diamond',
-		  labelKey: 'toolDiamond', fallback: 'Diamond', icon: ICON_DIAMOND },
-		{ id: 'parallelogram', group: 'shapes', subgroup: 'basic', kind: 'shape', shapeType: 'parallelogram',
-		  labelKey: 'toolParallelogram', fallback: 'Parallelogram', icon: ICON_PARALLELOGRAM },
-		{ id: 'hexagon', group: 'shapes', subgroup: 'basic', kind: 'shape', shapeType: 'hexagon',
-		  labelKey: 'toolHexagon', fallback: 'Hexagon', icon: ICON_HEXAGON },
-		{ id: 'star', group: 'shapes', subgroup: 'basic', kind: 'shape', shapeType: 'star',
-		  labelKey: 'toolStar', fallback: 'Star', icon: ICON_STAR },
+		// Shapes - basic primitives.
+		shape('rectangle',        'rectangle',        'basic', 'toolRectangle',        'Rectangle'),
+		shape('roundedRectangle', 'roundedRectangle', 'basic', 'toolRoundedRectangle', 'Rounded rectangle'),
+		shape('ellipse',          'ellipse',          'basic', 'toolEllipse',          'Ellipse', { squareIcon: true }),
+		shape('triangle',         'triangle',         'basic', 'toolTriangle',         'Triangle', { squareIcon: true }),
+		shape('diamond',          'diamond',          'basic', 'toolDiamond',          'Diamond', { squareIcon: true }),
+		shape('parallelogram',    'parallelogram',    'basic', 'toolParallelogram',    'Parallelogram'),
+		shape('trapezoid',        'trapezoid',        'basic', 'toolTrapezoid',        'Trapezoid'),
+		shape('hexagon',          'hexagon',          'basic', 'toolHexagon',          'Hexagon'),
+		shape('pentagon',         'pentagon',         'basic', 'toolPentagon',         'Pentagon', { squareIcon: true }),
+		shape('star',             'star',             'basic', 'toolStar',             'Star', { squareIcon: true }),
 
-		// Shapes - Flowchart
-		{ id: 'terminator', group: 'shapes', subgroup: 'flowchart', kind: 'shape', shapeType: 'terminator',
-		  labelKey: 'toolTerminator', fallback: 'Terminator (start/end)', icon: ICON_TERMINATOR },
-		{ id: 'document', group: 'shapes', subgroup: 'flowchart', kind: 'shape', shapeType: 'document',
-		  labelKey: 'toolDocument', fallback: 'Document', icon: ICON_DOCUMENT },
-		{ id: 'manualInput', group: 'shapes', subgroup: 'flowchart', kind: 'shape', shapeType: 'manualInput',
-		  labelKey: 'toolManualInput', fallback: 'Manual input', icon: ICON_MANUAL_INPUT },
-		{ id: 'predefinedProcess', group: 'shapes', subgroup: 'flowchart', kind: 'shape', shapeType: 'predefinedProcess',
-		  labelKey: 'toolPredefinedProcess', fallback: 'Predefined process', icon: ICON_PREDEFINED },
+		// Shapes - flowchart.
+		shape('terminator',       'terminator',       'flowchart', 'toolTerminator',       'Terminator (start / end)'),
+		// Aliases: process, decision, data point at existing primitives.
+		shape('flowProcess',      'rectangle',        'flowchart', 'toolFlowProcess',      'Process'),
+		shape('flowDecision',     'diamond',          'flowchart', 'toolFlowDecision',     'Decision', { squareIcon: true }),
+		shape('flowData',         'parallelogram',    'flowchart', 'toolFlowData',         'Data'),
+		shape('document',         'document',         'flowchart', 'toolDocument',         'Document'),
+		shape('multipleDocuments','multipleDocuments','flowchart', 'toolMultipleDocuments','Multiple documents'),
+		shape('manualInput',      'manualInput',      'flowchart', 'toolManualInput',      'Manual input'),
+		shape('predefinedProcess','predefinedProcess','flowchart', 'toolPredefinedProcess','Predefined process'),
+		shape('delay',            'delay',            'flowchart', 'toolDelay',            'Delay'),
+		shape('offPageConnector', 'offPageConnector', 'flowchart', 'toolOffPageConnector', 'Off-page connector'),
 
-		// Shapes - Infrastructure / IT
-		{ id: 'cylinder', group: 'shapes', subgroup: 'infra', kind: 'shape', shapeType: 'cylinder',
-		  labelKey: 'toolCylinder', fallback: 'Cylinder / Database', icon: ICON_CYLINDER },
-		{ id: 'queue', group: 'shapes', subgroup: 'infra', kind: 'shape', shapeType: 'queue',
-		  labelKey: 'toolQueue', fallback: 'Queue', icon: ICON_QUEUE },
-		{ id: 'server', group: 'shapes', subgroup: 'infra', kind: 'shape', shapeType: 'server',
-		  labelKey: 'toolServer', fallback: 'Server / node', icon: ICON_SERVER },
-		{ id: 'cloud', group: 'shapes', subgroup: 'infra', kind: 'shape', shapeType: 'cloud',
-		  labelKey: 'toolCloud', fallback: 'Cloud', icon: ICON_CLOUD },
-		{ id: 'actor', group: 'shapes', subgroup: 'infra', kind: 'shape', shapeType: 'actor',
-		  labelKey: 'toolActor', fallback: 'Actor', icon: ICON_ACTOR },
-		{ id: 'card-shape', group: 'shapes', subgroup: 'infra', kind: 'shape', shapeType: 'card',
-		  labelKey: 'toolCardShape', fallback: 'Card', icon: ICON_CARD },
-		{ id: 'callout', group: 'shapes', subgroup: 'infra', kind: 'shape', shapeType: 'callout',
-		  labelKey: 'toolCallout', fallback: 'Callout', icon: ICON_CALLOUT },
+		// Shapes - architecture (servers, services, devices, networking).
+		shape('cylinder',     'cylinder',     'architecture', 'toolCylinder',     'Cylinder / Database'),
+		shape('queue',        'queue',        'architecture', 'toolQueue',        'Queue'),
+		shape('server',       'server',       'architecture', 'toolServer',       'Server / node'),
+		shape('cloud',        'cloud',        'architecture', 'toolCloud',        'Cloud'),
+		shape('actor',        'actor',        'architecture', 'toolActor',        'Actor', { squareIcon: true }),
+		shape('browser',      'browser',      'architecture', 'toolBrowser',      'Browser'),
+		shape('mobile',       'mobile',       'architecture', 'toolMobile',       'Mobile', { squareIcon: true }),
+		shape('laptop',       'laptop',       'architecture', 'toolLaptop',       'Laptop'),
+		shape('desktop',      'desktop',      'architecture', 'toolDesktop',      'Desktop', { squareIcon: true }),
+		shape('container',    'container',    'architecture', 'toolContainer',    'Container'),
+		shape('gear',         'gear',         'architecture', 'toolGear',         'Gear / Service', { squareIcon: true }),
+		shape('loadBalancer', 'loadBalancer', 'architecture', 'toolLoadBalancer', 'Load balancer', { squareIcon: true }),
+		shape('firewall',     'firewall',     'architecture', 'toolFirewall',     'Firewall'),
+		shape('lock',         'lock',         'architecture', 'toolLock',         'Lock', { squareIcon: true }),
+		shape('folder',       'folder',       'architecture', 'toolFolder',       'Folder'),
 
-		// Lines - Basic
-		{ id: 'line', group: 'lines', subgroup: 'basic', kind: 'line',
-		  lineSpec: { type: 'line', strokeStyle: 'solid', startArrow: 'none', endArrow: 'none' },
-		  labelKey: 'toolLine', fallback: 'Solid line', icon: ICON_LINE },
-		{ id: 'arrow', group: 'lines', subgroup: 'basic', kind: 'line',
-		  lineSpec: { type: 'arrow', strokeStyle: 'solid', startArrow: 'none', endArrow: 'arrow' },
-		  labelKey: 'toolArrow', fallback: 'Arrow', icon: ICON_ARROW },
-		{ id: 'biarrow', group: 'lines', subgroup: 'basic', kind: 'line',
-		  lineSpec: { type: 'arrow', strokeStyle: 'solid', startArrow: 'arrow', endArrow: 'arrow' },
-		  labelKey: 'toolBiArrow', fallback: 'Bidirectional arrow', icon: ICON_BIARROW },
-		{ id: 'line-dashed', group: 'lines', subgroup: 'basic', kind: 'line',
-		  lineSpec: { type: 'line', strokeStyle: 'dashed', startArrow: 'none', endArrow: 'none' },
-		  labelKey: 'toolLineDashed', fallback: 'Dashed line', icon: ICON_LINE_DASHED },
-		{ id: 'line-dotted', group: 'lines', subgroup: 'basic', kind: 'line',
-		  lineSpec: { type: 'line', strokeStyle: 'dotted', startArrow: 'none', endArrow: 'none' },
-		  labelKey: 'toolLineDotted', fallback: 'Dotted line', icon: ICON_LINE_DOTTED },
-		{ id: 'arrow-dashed', group: 'lines', subgroup: 'basic', kind: 'line',
-		  lineSpec: { type: 'arrow', strokeStyle: 'dashed', startArrow: 'none', endArrow: 'arrow' },
-		  labelKey: 'toolArrowDashed', fallback: 'Dashed arrow', icon: ICON_ARROW_DASHED },
+		// Shapes - notes / annotations.
+		shape('cardShape',    'card',       'notes', 'toolCardShape',    'Card'),
+		shape('callout',      'callout',    'notes', 'toolCallout',      'Callout'),
+		shape('uiStickyNote', 'stickyNote', 'notes', 'toolUiStickyNote', 'Sticky note'),
 
-		// Lines - UML connectors
-		{ id: 'arrow-inheritance', group: 'lines', subgroup: 'uml', kind: 'line',
-		  lineSpec: { type: 'line', strokeStyle: 'solid', startArrow: 'none', endArrow: 'triangle' },
-		  labelKey: 'toolInheritance', fallback: 'Inheritance', icon: ICON_INHERITANCE },
-		{ id: 'arrow-realization', group: 'lines', subgroup: 'uml', kind: 'line',
-		  lineSpec: { type: 'line', strokeStyle: 'dashed', startArrow: 'none', endArrow: 'triangle' },
-		  labelKey: 'toolRealization', fallback: 'Realization', icon: ICON_REALIZATION },
-		{ id: 'arrow-aggregation', group: 'lines', subgroup: 'uml', kind: 'line',
-		  lineSpec: { type: 'line', strokeStyle: 'solid', startArrow: 'none', endArrow: 'diamond-open' },
-		  labelKey: 'toolAggregation', fallback: 'Aggregation', icon: ICON_AGGREGATION },
-		{ id: 'arrow-composition', group: 'lines', subgroup: 'uml', kind: 'line',
-		  lineSpec: { type: 'line', strokeStyle: 'solid', startArrow: 'none', endArrow: 'diamond-filled' },
-		  labelKey: 'toolComposition', fallback: 'Composition', icon: ICON_COMPOSITION },
-		{ id: 'arrow-dependency', group: 'lines', subgroup: 'uml', kind: 'line',
-		  lineSpec: { type: 'arrow', strokeStyle: 'dashed', startArrow: 'none', endArrow: 'arrow' },
-		  labelKey: 'toolDependency', fallback: 'Dependency', icon: ICON_ARROW_DASHED },
+		// Lines - basic.
+		lineTool('line',         'basic', 'toolLine',         'Solid line',         ICON_LINE,
+			{ type: 'line',  strokeStyle: 'solid',  startArrow: 'none',  endArrow: 'none'  }),
+		lineTool('arrow',        'basic', 'toolArrow',        'Arrow',              ICON_ARROW,
+			{ type: 'arrow', strokeStyle: 'solid',  startArrow: 'none',  endArrow: 'arrow' }),
+		lineTool('biarrow',      'basic', 'toolBiArrow',      'Bidirectional arrow',ICON_BIARROW,
+			{ type: 'arrow', strokeStyle: 'solid',  startArrow: 'arrow', endArrow: 'arrow' }),
+		lineTool('line-dashed',  'basic', 'toolLineDashed',   'Dashed line',        ICON_LINE_DASHED,
+			{ type: 'line',  strokeStyle: 'dashed', startArrow: 'none',  endArrow: 'none'  }),
+		lineTool('line-dotted',  'basic', 'toolLineDotted',   'Dotted line',        ICON_LINE_DOTTED,
+			{ type: 'line',  strokeStyle: 'dotted', startArrow: 'none',  endArrow: 'none'  }),
+		lineTool('line-thick',   'basic', 'toolLineThick',    'Thick line',         ICON_LINE_THICK,
+			{ type: 'line',  strokeStyle: 'solid',  startArrow: 'none',  endArrow: 'none', strokeWidth: 4 }),
+		lineTool('arrow-dashed', 'basic', 'toolArrowDashed',  'Dashed arrow',       ICON_ARROW_DASHED,
+			{ type: 'arrow', strokeStyle: 'dashed', startArrow: 'none',  endArrow: 'arrow' }),
 
-		// Freehand
-		{ id: 'pen', group: 'pen', kind: 'pen',
-		  labelKey: 'toolPen', fallback: 'Pen', icon: ICON_PEN },
+		// Lines - UML.
+		lineTool('arrow-inheritance', 'uml', 'toolInheritance', 'Inheritance', ICON_INHERITANCE,
+			{ type: 'line',  strokeStyle: 'solid',  startArrow: 'none',  endArrow: 'triangle' }),
+		lineTool('arrow-realization', 'uml', 'toolRealization', 'Realization', ICON_REALIZATION,
+			{ type: 'line',  strokeStyle: 'dashed', startArrow: 'none',  endArrow: 'triangle' }),
+		lineTool('arrow-aggregation', 'uml', 'toolAggregation', 'Aggregation', ICON_AGGREGATION,
+			{ type: 'line',  strokeStyle: 'solid',  startArrow: 'none',  endArrow: 'diamond-open' }),
+		lineTool('arrow-composition', 'uml', 'toolComposition', 'Composition', ICON_COMPOSITION,
+			{ type: 'line',  strokeStyle: 'solid',  startArrow: 'none',  endArrow: 'diamond-filled' }),
+		lineTool('arrow-dependency',  'uml', 'toolDependency',  'Dependency',  ICON_ARROW_DASHED,
+			{ type: 'arrow', strokeStyle: 'dashed', startArrow: 'none',  endArrow: 'arrow' }),
 
-		// Text
+		// Freehand + text.
+		{ id: 'pen',  group: 'pen',  kind: 'pen',
+		  labelKey: 'toolPen',  fallback: 'Pen',  icon: ICON_PEN },
 		{ id: 'text', group: 'text', kind: 'text',
 		  labelKey: 'toolText', fallback: 'Text', icon: ICON_TEXT },
 	];
 
 	const DEFAULT_TOOL = 'select';
-	const TOOL_BY_ID = new Map(TOOLS.map((t) => [t.id, t]));
+	const TOOL_BY_ID = new Map(TOOLS.map((tool) => [tool.id, tool]));
 
 	function getToolDef(id) { return TOOL_BY_ID.get(id) || null; }
 
@@ -249,38 +319,34 @@
 
 	const SLOT_ORDER = ['select', 'shapes', 'lines', 'pen', 'text'];
 
-	/**
-	 * Default tool shown on each dropdown slot when nothing in that group
-	 * has been picked yet. Picked as the most universally-useful starting
-	 * point per group.
-	 */
+	/** Default tool shown on each dropdown slot before user picks one. */
 	const DROPDOWN_DEFAULT_TOOL = {
-		shapes: 'square',
+		shapes: 'rectangle',
 		lines: 'arrow',
 	};
 
-	const DROPDOWN_LABEL_KEY = {
+	const DROPDOWN_LABEL = {
 		shapes: { key: 'toolGroupShapes', fallback: 'Shapes' },
 		lines: { key: 'toolGroupLines', fallback: 'Lines' },
 	};
 
 	const SUBGROUP_LABEL = {
-		basic: { key: 'toolSubgroupBasic', fallback: 'Basic' },
-		flowchart: { key: 'toolSubgroupFlowchart', fallback: 'Flowchart' },
-		infra: { key: 'toolSubgroupInfra', fallback: 'Infrastructure / IT' },
-		uml: { key: 'toolSubgroupUml', fallback: 'UML connectors' },
+		basic:        { key: 'toolSubgroupBasic',        fallback: 'Basic' },
+		flowchart:    { key: 'toolSubgroupFlowchart',    fallback: 'Flowchart' },
+		architecture: { key: 'toolSubgroupArchitecture', fallback: 'Architecture' },
+		notes:        { key: 'toolSubgroupNotes',        fallback: 'Notes' },
+		uml:          { key: 'toolSubgroupUml',          fallback: 'UML connectors' },
 	};
 
-	/** Subgroup order inside each dropdown popover. */
-	const SUBGROUP_ORDER_SHAPES = ['basic', 'flowchart', 'infra'];
+	const SUBGROUP_ORDER_SHAPES = ['basic', 'flowchart', 'architecture', 'notes'];
 	const SUBGROUP_ORDER_LINES = ['basic', 'uml'];
 
-	// ---- DOM helpers -----------------------------------------------------
+	// ---- DOM helpers ----------------------------------------------------
 
-	function makeIconButton(tool, onClick, extraClass) {
+	function makeIconButton(tool, onClick) {
 		const btn = document.createElement('button');
 		btn.type = 'button';
-		btn.className = 'tool-btn icon-btn' + (extraClass ? ' ' + extraClass : '');
+		btn.className = 'tool-btn icon-btn';
 		btn.dataset.tool = tool.id;
 		const label = t(tool.labelKey, tool.fallback);
 		btn.title = label;
@@ -304,41 +370,105 @@
 
 	// ---- popover content -------------------------------------------------
 
+	/**
+	 * Filters the group's tools by the lowercase search query (matched
+	 * against the localized label) and returns subgroup -> tools[] map.
+	 */
+	function filterTools(groupId, query) {
+		const q = (query || '').trim().toLowerCase();
+		const groupTools = TOOLS.filter((tool) => tool.group === groupId);
+		if (!q) {
+			return groupTools;
+		}
+		return groupTools.filter((tool) => {
+			const label = t(tool.labelKey, tool.fallback);
+			return label.toLowerCase().includes(q) ||
+				tool.id.toLowerCase().includes(q) ||
+				(tool.shapeType ? tool.shapeType.toLowerCase().includes(q) : false);
+		});
+	}
+
+	function renderTile(tool, activeToolId, onPick) {
+		const btn = document.createElement('button');
+		btn.type = 'button';
+		btn.className = 'toolbar-popover-item';
+		if (tool.id === activeToolId) btn.classList.add('active');
+		const label = t(tool.labelKey, tool.fallback);
+		btn.title = label;
+		btn.setAttribute('aria-label', label);
+		btn.innerHTML = `<span class="toolbar-popover-icon">${tool.icon}</span>` +
+			`<span class="toolbar-popover-label">${label}</span>`;
+		btn.addEventListener('click', () => onPick(tool.id));
+		return btn;
+	}
+
+	/**
+	 * Builds the popover body: a search input on top and grouped grids of
+	 * tiles below. The search input keeps focus across re-renders so the
+	 * user can type continuously without losing the cursor.
+	 */
 	function buildDropdownContent(groupId, activeToolId, onPick) {
 		const root = document.createElement('div');
 		root.className = 'toolbar-popover-content';
 		root.dataset.group = groupId;
 
-		const groupTools = TOOLS.filter((tool) => tool.group === groupId);
-		const subgroupOrder = groupId === 'shapes' ? SUBGROUP_ORDER_SHAPES : SUBGROUP_ORDER_LINES;
+		const searchWrap = document.createElement('div');
+		searchWrap.className = 'toolbar-popover-search';
+		const search = document.createElement('input');
+		search.type = 'text';
+		search.className = 'toolbar-popover-search-input';
+		search.placeholder = t('toolSearchPlaceholder', 'Search...');
+		search.setAttribute('autocomplete', 'off');
+		searchWrap.appendChild(search);
+		root.appendChild(searchWrap);
 
-		for (const subgroup of subgroupOrder) {
-			const tools = groupTools.filter((tool) => tool.subgroup === subgroup);
-			if (tools.length === 0) continue;
+		const body = document.createElement('div');
+		body.className = 'toolbar-popover-body';
+		root.appendChild(body);
 
-			const heading = document.createElement('div');
-			heading.className = 'toolbar-popover-heading';
-			const headingMeta = SUBGROUP_LABEL[subgroup] || { fallback: subgroup };
-			heading.textContent = t(headingMeta.key, headingMeta.fallback);
-			root.appendChild(heading);
-
-			const grid = document.createElement('div');
-			grid.className = 'toolbar-popover-grid';
-			for (const tool of tools) {
-				const btn = document.createElement('button');
-				btn.type = 'button';
-				btn.className = 'toolbar-popover-item';
-				if (tool.id === activeToolId) btn.classList.add('active');
-				const label = t(tool.labelKey, tool.fallback);
-				btn.title = label;
-				btn.setAttribute('aria-label', label);
-				btn.innerHTML = `<span class="toolbar-popover-icon">${tool.icon}</span>` +
-					`<span class="toolbar-popover-label">${label}</span>`;
-				btn.addEventListener('click', () => onPick(tool.id));
-				grid.appendChild(btn);
+		function renderBody() {
+			body.innerHTML = '';
+			const filtered = filterTools(groupId, search.value);
+			if (filtered.length === 0) {
+				const empty = document.createElement('div');
+				empty.className = 'toolbar-popover-empty';
+				empty.textContent = t('toolSearchEmpty', 'No matches');
+				body.appendChild(empty);
+				return;
 			}
-			root.appendChild(grid);
+			const subgroupOrder = groupId === 'shapes' ? SUBGROUP_ORDER_SHAPES : SUBGROUP_ORDER_LINES;
+			for (const subgroup of subgroupOrder) {
+				const tools = filtered.filter((tool) => tool.subgroup === subgroup);
+				if (tools.length === 0) continue;
+				const heading = document.createElement('div');
+				heading.className = 'toolbar-popover-heading';
+				const meta = SUBGROUP_LABEL[subgroup] || { fallback: subgroup };
+				heading.textContent = t(meta.key, meta.fallback);
+				body.appendChild(heading);
+				const grid = document.createElement('div');
+				grid.className = 'toolbar-popover-grid';
+				for (const tool of tools) {
+					grid.appendChild(renderTile(tool, activeToolId, onPick));
+				}
+				body.appendChild(grid);
+			}
 		}
+
+		search.addEventListener('input', renderBody);
+		// Enter on a non-empty filter selects the first match.
+		search.addEventListener('keydown', (evt) => {
+			if (evt.key !== 'Enter') return;
+			const filtered = filterTools(groupId, search.value);
+			if (filtered.length === 0) return;
+			evt.preventDefault();
+			onPick(filtered[0].id);
+		});
+
+		renderBody();
+		// Focus the search input on the next tick so the popover finishes
+		// mounting before the focus lands - prevents the browser from
+		// scrolling the page to the input.
+		setTimeout(() => { try { search.focus(); } catch (_) { /* ignore */ } }, 0);
 
 		return root;
 	}
@@ -350,20 +480,16 @@
 		host.innerHTML = '';
 		let active = DEFAULT_TOOL;
 
-		// Per-dropdown state: { rootBtn, iconHost, currentToolId }
+		// Per-dropdown state: { rootBtn, iconHost, currentToolId, groupId }
 		const dropdowns = new Map();
 		// Standalone (non-dropdown) buttons by id, for highlighting.
 		const flatButtons = new Map();
 
-		const slotElements = [];
-
 		function setActive(id) {
 			active = id;
-			// Highlight flat buttons.
 			for (const [tid, btn] of flatButtons.entries()) {
 				btn.classList.toggle('active', tid === id);
 			}
-			// Highlight dropdown buttons and update their displayed icon.
 			for (const [groupId, dd] of dropdowns.entries()) {
 				const def = getToolDef(id);
 				const isInThisGroup = def && def.group === groupId;
@@ -388,14 +514,12 @@
 
 		function openDropdown(groupId) {
 			const dd = dropdowns.get(groupId);
-			if (!dd) return;
-			if (Dropdown && Dropdown.isOpen()) {
+			if (!dd || !Dropdown) return;
+			if (Dropdown.isOpen()) {
+				// Same anchor pressed again - close it.
 				Dropdown.close();
-				// If the popover for the same anchor was open, treat the
-				// click as a toggle-close.
 				return;
 			}
-			if (!Dropdown) return;
 			Dropdown.open(dd.rootBtn, (close) => {
 				return buildDropdownContent(groupId, active, (toolId) => {
 					close();
@@ -419,14 +543,10 @@
 		}
 
 		function buildDropdownSlot(groupId) {
-			const meta = DROPDOWN_LABEL_KEY[groupId];
+			const meta = DROPDOWN_LABEL[groupId];
 			const initialToolId = DROPDOWN_DEFAULT_TOOL[groupId];
 			const initialDef = getToolDef(initialToolId);
 			const label = t(meta.key, meta.fallback);
-
-			const wrap = document.createElement('div');
-			wrap.className = 'toolbar-dropdown';
-			wrap.dataset.group = groupId;
 
 			const rootBtn = document.createElement('button');
 			rootBtn.type = 'button';
@@ -449,10 +569,10 @@
 			const dd = { rootBtn, iconHost, currentToolId: initialToolId, groupId };
 			dropdowns.set(groupId, dd);
 
-			// Click semantics (Figma-style):
-			//   - if the dropdown's current tool is NOT active, the click
-			//     selects that tool (fast re-pick of the last used variant);
-			//   - if it IS active, the click opens the popover.
+			// Click semantics:
+			//   - if the active tool already belongs to this group, click
+			//     opens the popover for re-pick;
+			//   - otherwise click activates the dropdown's current tool.
 			rootBtn.addEventListener('click', () => {
 				const def = getToolDef(active);
 				if (def && def.group === groupId) {
@@ -461,24 +581,19 @@
 					setActive(dd.currentToolId);
 				}
 			});
-
-			// Caret area always opens the popover regardless of state.
+			// Caret always opens the popover.
 			caret.addEventListener('click', (evt) => {
 				evt.stopPropagation();
 				openDropdown(groupId);
 			});
 
-			wrap.appendChild(rootBtn);
-			return wrap;
+			return rootBtn;
 		}
 
+		const slotElements = [];
 		for (const slot of SLOT_ORDER) {
-			if (slot !== 'select' && slotElements.length > 0) {
-				// Separator between select and the rest, and between
-				// dropdowns and the trailing pen/text simple buttons.
-				if (slot === 'shapes' || slot === 'pen') {
-					host.appendChild(makeSeparator());
-				}
+			if (slot === 'shapes' || slot === 'pen') {
+				if (slotElements.length > 0) host.appendChild(makeSeparator());
 			}
 			let node;
 			switch (slot) {
@@ -495,11 +610,7 @@
 		}
 
 		setActive(active);
-
-		return {
-			getActive: () => active,
-			setActive,
-		};
+		return { getActive: () => active, setActive };
 	}
 
 	window.CanvasNotes = window.CanvasNotes || {};

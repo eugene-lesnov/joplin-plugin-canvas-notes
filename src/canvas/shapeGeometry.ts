@@ -195,13 +195,29 @@ export function documentPath(b: Box): string {
  * cosmetic strokes inside compound shapes (e.g. divider lines inside a
  * `predefinedProcess`) which use stroke-only via `fillOverride: 'none'`.
  */
+/**
+ * Optional style overrides applicable to any piece:
+ *   - fillOverride === 'none'     : stroke-only piece (no fill);
+ *   - strokeWidthMul              : stroke width = base * this multiplier
+ *                                   (used for BPMN end events that need
+ *                                   a thicker outline);
+ *   - noStroke                    : piece is filled but has no outline
+ *                                   (used for solid dots / fills inside
+ *                                   compound shapes).
+ */
+interface PieceStyle {
+	fillOverride?: 'none';
+	strokeWidthMul?: number;
+	noStroke?: boolean;
+}
+
 export type ShapePiece =
-	| { type: 'rect'; x: number; y: number; w: number; h: number; rx?: number; fillOverride?: 'none' }
-	| { type: 'ellipse'; cx: number; cy: number; rx: number; ry: number; fillOverride?: 'none' }
-	| { type: 'polygon'; points: string; fillOverride?: 'none' }
-	| { type: 'path'; d: string; fillOverride?: 'none' }
-	| { type: 'line'; x1: number; y1: number; x2: number; y2: number }
-	| { type: 'circle'; cx: number; cy: number; r: number; fillOverride?: 'none' };
+	| ({ type: 'rect'; x: number; y: number; w: number; h: number; rx?: number } & PieceStyle)
+	| ({ type: 'ellipse'; cx: number; cy: number; rx: number; ry: number } & PieceStyle)
+	| ({ type: 'polygon'; points: string } & PieceStyle)
+	| ({ type: 'path'; d: string } & PieceStyle)
+	| ({ type: 'line'; x1: number; y1: number; x2: number; y2: number } & PieceStyle)
+	| ({ type: 'circle'; cx: number; cy: number; r: number } & PieceStyle);
 
 /**
  * Describes how to render a given ShapeKind. The renderer (TS or JS)
@@ -262,31 +278,41 @@ export function starPoints(b: Box): string {
 }
 
 /**
- * Predefined process: rectangle with two vertical bars near the left and
- * right edges. Classic flowchart subroutine glyph.
+ * Predefined process (a.k.a. subroutine): single path that combines the
+ * outer rectangle with two internal vertical bars. Using one path avoids
+ * the visual noise of three separate stroked elements piled on top of
+ * each other at small sizes.
  */
-export function predefinedProcessPieces(b: Box): ShapePiece[] {
+export function predefinedProcessPath(b: Box): string {
 	const inset = Math.min(b.w * 0.12, 14);
-	return [
-		{ type: 'rect', x: b.x, y: b.y, w: b.w, h: b.h },
-		{ type: 'line', x1: b.x + inset, y1: b.y, x2: b.x + inset, y2: b.y + b.h },
-		{ type: 'line', x1: b.x + b.w - inset, y1: b.y, x2: b.x + b.w - inset, y2: b.y + b.h },
-	];
+	return (
+		// Outer rectangle.
+		`M ${num(b.x)} ${num(b.y)}` +
+		` L ${num(b.x + b.w)} ${num(b.y)}` +
+		` L ${num(b.x + b.w)} ${num(b.y + b.h)}` +
+		` L ${num(b.x)} ${num(b.y + b.h)} Z` +
+		// Left inner bar (move + line, no fill contribution because the
+		// segments lie inside the outer rect).
+		` M ${num(b.x + inset)} ${num(b.y)}` +
+		` L ${num(b.x + inset)} ${num(b.y + b.h)}` +
+		// Right inner bar.
+		` M ${num(b.x + b.w - inset)} ${num(b.y)}` +
+		` L ${num(b.x + b.w - inset)} ${num(b.y + b.h)}`
+	);
 }
 
 /**
- * Server / rack: rectangle subdivided by two horizontal dividers + small
- * status dot in the top-left band. Reads unmistakably as a 1U/2U server.
+ * Server / rack: rectangle subdivided by two horizontal dividers. The
+ * earlier version added stroke-only status dots; at small sizes those
+ * read as random specks on top of the horizontal lines, so the dots are
+ * removed in favor of a clean 3-band layout.
  */
 export function serverPieces(b: Box): ShapePiece[] {
-	const bandH = Math.max(8, b.h / 4);
-	const dotR = Math.max(2, bandH * 0.18);
+	const bandH = Math.max(8, b.h / 3);
 	return [
 		{ type: 'rect', x: b.x, y: b.y, w: b.w, h: b.h, rx: 2 },
 		{ type: 'line', x1: b.x, y1: b.y + bandH, x2: b.x + b.w, y2: b.y + bandH },
 		{ type: 'line', x1: b.x, y1: b.y + bandH * 2, x2: b.x + b.w, y2: b.y + bandH * 2 },
-		{ type: 'circle', cx: b.x + bandH * 0.5, cy: b.y + bandH * 0.5, r: dotR, fillOverride: 'none' },
-		{ type: 'circle', cx: b.x + bandH * 0.5, cy: b.y + bandH * 1.5, r: dotR, fillOverride: 'none' },
 	];
 }
 
@@ -335,25 +361,351 @@ export function queuePieces(b: Box): ShapePiece[] {
 	];
 }
 
+// ---- additional basic shapes ---------------------------------------------
+
+/** Regular pentagon inscribed into the bounding box, point at the top. */
+export function pentagonPoints(b: Box): string {
+	const cx = b.x + b.w / 2;
+	const cy = b.y + b.h / 2;
+	const rx = b.w / 2;
+	const ry = b.h / 2;
+	const coords: number[][] = [];
+	for (let i = 0; i < 5; i++) {
+		const angle = -Math.PI / 2 + i * 2 * Math.PI / 5;
+		coords.push([cx + rx * Math.cos(angle), cy + ry * Math.sin(angle)]);
+	}
+	return pts(coords);
+}
+
+/** Trapezoid (isoceles) with the longer side at the bottom. */
+export function trapezoidPoints(b: Box): string {
+	const inset = Math.min(b.w * 0.2, b.h * 0.5);
+	return pts([
+		[b.x + inset, b.y],
+		[b.x + b.w - inset, b.y],
+		[b.x + b.w, b.y + b.h],
+		[b.x, b.y + b.h],
+	]);
+}
+
+// ---- additional flowchart shapes ----------------------------------------
+
+/** Delay: rectangle with the right edge rounded into a semicircle. */
+export function delayPath(b: Box): string {
+	const r = b.h / 2;
+	return (
+		`M ${num(b.x)} ${num(b.y)}` +
+		` L ${num(b.x + b.w - r)} ${num(b.y)}` +
+		` A ${num(r)} ${num(r)} 0 0 1 ${num(b.x + b.w - r)} ${num(b.y + b.h)}` +
+		` L ${num(b.x)} ${num(b.y + b.h)}` +
+		` Z`
+	);
+}
+
+/**
+ * Off-page connector: "home plate" shape - rectangle with the bottom edge
+ * folded to a point. Standard flow chart symbol for branching to another
+ * page or another diagram.
+ */
+export function offPageConnectorPoints(b: Box): string {
+	const foldStartY = b.y + b.h * 0.6;
+	return pts([
+		[b.x, b.y],
+		[b.x + b.w, b.y],
+		[b.x + b.w, foldStartY],
+		[b.x + b.w / 2, b.y + b.h],
+		[b.x, foldStartY],
+	]);
+}
+
+/**
+ * Multiple documents: a single rear sheet peeking out from behind the
+ * main document. Only two layers - earlier three-layer version produced
+ * too many parallel strokes that read as visual noise at small sizes.
+ */
+export function multipleDocumentsPieces(b: Box): ShapePiece[] {
+	const offset = Math.min(b.w * 0.1, b.h * 0.1, 10);
+	return [
+		// Rear sheet: stroke-only thin rect so it does not compete with
+		// the front document outline.
+		{ type: 'rect',
+			x: b.x + offset, y: b.y,
+			w: b.w - offset, h: b.h - offset,
+			fillOverride: 'none' },
+		// Front document with the wavy bottom.
+		{ type: 'path', d: documentPath({ x: b.x, y: b.y + offset, w: b.w - offset, h: b.h - offset }) },
+	];
+}
+
+// ---- additional IT / infrastructure shapes ------------------------------
+
+/** Folder: rectangle with a small tab on top-left, like an OS folder. */
+export function folderPieces(b: Box): ShapePiece[] {
+	const tabW = Math.min(b.w * 0.35, 60);
+	const tabH = Math.min(b.h * 0.2, 14);
+	const tabSlant = Math.min(tabH * 0.5, 6);
+	return [
+		// Tab on top-left.
+		{ type: 'polygon', points: pts([
+			[b.x, b.y],
+			[b.x + tabW, b.y],
+			[b.x + tabW + tabSlant, b.y + tabH],
+			[b.x, b.y + tabH],
+		]) },
+		// Body rect starts right under the tab.
+		{ type: 'rect', x: b.x, y: b.y + tabH, w: b.w, h: b.h - tabH, rx: 2 },
+	];
+}
+
+/** Browser window: title bar + 3 traffic-light dots + body area. */
+export function browserPieces(b: Box): ShapePiece[] {
+	const barH = Math.min(b.h * 0.18, 18);
+	const dotR = Math.max(1.5, barH * 0.22);
+	const dotY = b.y + barH / 2;
+	const dotX = b.x + barH * 0.55;
+	const dotGap = barH * 0.55;
+	return [
+		{ type: 'rect', x: b.x, y: b.y, w: b.w, h: b.h, rx: 2 },
+		{ type: 'line', x1: b.x, y1: b.y + barH, x2: b.x + b.w, y2: b.y + barH },
+		{ type: 'circle', cx: dotX, cy: dotY, r: dotR, fillOverride: 'none' },
+		{ type: 'circle', cx: dotX + dotGap, cy: dotY, r: dotR, fillOverride: 'none' },
+		{ type: 'circle', cx: dotX + dotGap * 2, cy: dotY, r: dotR, fillOverride: 'none' },
+	];
+}
+
+/** Desktop computer: monitor + base / stand. */
+export function desktopPieces(b: Box): ShapePiece[] {
+	const screenH = b.h * 0.7;
+	const standW = b.w * 0.18;
+	const standH = b.h * 0.12;
+	const baseW = b.w * 0.4;
+	const baseY = b.y + screenH + standH;
+	return [
+		{ type: 'rect', x: b.x, y: b.y, w: b.w, h: screenH, rx: 2 },
+		{ type: 'rect',
+			x: b.x + (b.w - standW) / 2, y: b.y + screenH,
+			w: standW, h: standH },
+		{ type: 'rect',
+			x: b.x + (b.w - baseW) / 2, y: baseY,
+			w: baseW, h: b.h - screenH - standH, rx: 2 },
+	];
+}
+
+/** Laptop: screen on top + trapezoid base below. */
+export function laptopPieces(b: Box): ShapePiece[] {
+	const screenH = b.h * 0.78;
+	const baseY = b.y + screenH;
+	const baseH = b.h - screenH;
+	const overhang = b.w * 0.08;
+	return [
+		{ type: 'rect', x: b.x + overhang * 0.5, y: b.y, w: b.w - overhang, h: screenH, rx: 2 },
+		{ type: 'polygon', points: pts([
+			[b.x, baseY + baseH],
+			[b.x + overhang, baseY],
+			[b.x + b.w - overhang, baseY],
+			[b.x + b.w, baseY + baseH],
+		]) },
+	];
+}
+
+/** Mobile phone: rounded rectangle with a screen area + home indicator. */
+export function mobilePieces(b: Box): ShapePiece[] {
+	const rx = Math.min(b.w * 0.15, b.h * 0.05, 8);
+	const topPad = b.h * 0.08;
+	const bottomPad = b.h * 0.1;
+	const sidePad = b.w * 0.08;
+	const homeY = b.y + b.h - bottomPad / 2;
+	const homeW = b.w * 0.3;
+	return [
+		{ type: 'rect', x: b.x, y: b.y, w: b.w, h: b.h, rx: rx },
+		// Screen area outline.
+		{ type: 'rect',
+			x: b.x + sidePad, y: b.y + topPad,
+			w: b.w - sidePad * 2, h: b.h - topPad - bottomPad,
+			fillOverride: 'none' },
+		// Home indicator (rounded short pill).
+		{ type: 'rect',
+			x: b.x + (b.w - homeW) / 2, y: homeY - 1,
+			w: homeW, h: 2, rx: 1, fillOverride: 'none' },
+	];
+}
+
+/**
+ * Container (Docker-style): pseudo-3D box. A front face + top + side
+ * parallelograms suggest depth without going full isometric.
+ */
+export function containerPieces(b: Box): ShapePiece[] {
+	const depth = Math.min(b.w * 0.18, b.h * 0.25, 18);
+	const frontX = b.x;
+	const frontY = b.y + depth;
+	const frontW = b.w - depth;
+	const frontH = b.h - depth;
+	return [
+		// Top face.
+		{ type: 'polygon', points: pts([
+			[frontX, frontY],
+			[frontX + depth, b.y],
+			[frontX + depth + frontW, b.y],
+			[frontX + frontW, frontY],
+		]) },
+		// Right face.
+		{ type: 'polygon', points: pts([
+			[frontX + frontW, frontY],
+			[frontX + depth + frontW, b.y],
+			[frontX + depth + frontW, b.y + frontH],
+			[frontX + frontW, frontY + frontH],
+		]) },
+		// Front face.
+		{ type: 'rect', x: frontX, y: frontY, w: frontW, h: frontH },
+	];
+}
+
+/**
+ * Gear: 8-tooth gear glyph. A simple octagonal outer ring with a circle
+ * cut-out in the middle. Stylized for readability at small sizes.
+ */
+export function gearPieces(b: Box): ShapePiece[] {
+	const cx = b.x + b.w / 2;
+	const cy = b.y + b.h / 2;
+	const rOuter = Math.min(b.w, b.h) / 2;
+	const rInner = rOuter * 0.7;
+	const rHole = rOuter * 0.32;
+	const teeth = 8;
+	const coords: number[][] = [];
+	for (let i = 0; i < teeth * 2; i++) {
+		const angle = -Math.PI / 2 + i * Math.PI / teeth;
+		const r = i % 2 === 0 ? rOuter : rInner;
+		coords.push([cx + r * Math.cos(angle), cy + r * Math.sin(angle)]);
+	}
+	return [
+		{ type: 'polygon', points: pts(coords) },
+		{ type: 'circle', cx: cx, cy: cy, r: rHole, fillOverride: 'none' },
+	];
+}
+
+/**
+ * Load balancer: circle with arrows branching outward (left -> in,
+ * right -> 2 outputs). Distinctive enough to read in an architecture
+ * diagram without a label.
+ */
+export function loadBalancerPieces(b: Box): ShapePiece[] {
+	const cx = b.x + b.w / 2;
+	const cy = b.y + b.h / 2;
+	const r = Math.min(b.w, b.h) * 0.32;
+	const armLen = Math.min(b.w, b.h) * 0.25;
+	return [
+		{ type: 'circle', cx: cx, cy: cy, r: r },
+		// Incoming arrow from the left.
+		{ type: 'line', x1: cx - r - armLen, y1: cy, x2: cx - r, y2: cy },
+		// Two outgoing arrows on the right (up and down).
+		{ type: 'line', x1: cx + r, y1: cy - r * 0.5, x2: cx + r + armLen, y2: cy - r - armLen * 0.4 },
+		{ type: 'line', x1: cx + r, y1: cy + r * 0.5, x2: cx + r + armLen, y2: cy + r + armLen * 0.4 },
+	];
+}
+
+/**
+ * Firewall: simplified brick wall - 2 horizontal rows with a single
+ * staggered vertical join, the body remains readable at small sizes.
+ * The previous version had too many short verticals which looked busy.
+ */
+export function firewallPieces(b: Box): ShapePiece[] {
+	const midY = b.y + b.h / 2;
+	return [
+		{ type: 'rect', x: b.x, y: b.y, w: b.w, h: b.h },
+		{ type: 'line', x1: b.x, y1: midY, x2: b.x + b.w, y2: midY },
+		// Top row: single vertical at 1/2 width.
+		{ type: 'line', x1: b.x + b.w / 2, y1: b.y, x2: b.x + b.w / 2, y2: midY },
+		// Bottom row: two verticals at 1/4 and 3/4 (staggered bricks).
+		{ type: 'line', x1: b.x + b.w / 4, y1: midY, x2: b.x + b.w / 4, y2: b.y + b.h },
+		{ type: 'line', x1: b.x + 3 * b.w / 4, y1: midY, x2: b.x + 3 * b.w / 4, y2: b.y + b.h },
+	];
+}
+
+/** Padlock: round shackle on top + rectangular body. */
+export function lockPieces(b: Box): ShapePiece[] {
+	const bodyH = b.h * 0.6;
+	const bodyY = b.y + b.h - bodyH;
+	const shackleR = Math.min(b.w * 0.3, (b.h - bodyH) * 0.95);
+	const shackleCx = b.x + b.w / 2;
+	const shackleCy = bodyY;
+	return [
+		// Shackle: half-circle arc.
+		{ type: 'path', d:
+			`M ${num(shackleCx - shackleR)} ${num(shackleCy)}` +
+			` A ${num(shackleR)} ${num(shackleR)} 0 0 1 ${num(shackleCx + shackleR)} ${num(shackleCy)}`,
+			fillOverride: 'none' },
+		// Body.
+		{ type: 'rect', x: b.x, y: bodyY, w: b.w, h: bodyH, rx: 2 },
+	];
+}
+
+/**
+ * Sticky note: rectangle with a folded corner in the bottom-right. The
+ * fold is drawn as a small triangle in stroke-only to suggest the curl.
+ */
+export function stickyNotePieces(b: Box): ShapePiece[] {
+	const fold = Math.min(b.w, b.h) * 0.16;
+	return [
+		// Main body with a clipped corner.
+		{ type: 'polygon', points: pts([
+			[b.x, b.y],
+			[b.x + b.w, b.y],
+			[b.x + b.w, b.y + b.h - fold],
+			[b.x + b.w - fold, b.y + b.h],
+			[b.x, b.y + b.h],
+		]) },
+		// Folded corner as a small triangle outline.
+		{ type: 'polygon', points: pts([
+			[b.x + b.w, b.y + b.h - fold],
+			[b.x + b.w - fold, b.y + b.h - fold],
+			[b.x + b.w - fold, b.y + b.h],
+		]), fillOverride: 'none' },
+	];
+}
+
 /** Maps a ShapeKind + box to the drawing primitive(s) used for rendering. */
 export function shapeDraw(kind: ShapeKind, b: Box): ShapeDraw {
 	switch (kind) {
+		// ---- primitives ----
+		case 'rectangle':         return { kind: 'rect', x: b.x, y: b.y, w: b.w, h: b.h, rx: 0 };
+		case 'ellipse':           return { kind: 'compound', pieces: [
+			{ type: 'ellipse', cx: b.x + b.w / 2, cy: b.y + b.h / 2, rx: b.w / 2, ry: b.h / 2 },
+		] };
+		case 'roundedRectangle':  return { kind: 'rect', x: b.x, y: b.y, w: b.w, h: b.h, rx: roundedRectangleRx(b) };
+		case 'triangle':          return { kind: 'polygon', points: trianglePoints(b) };
 		case 'diamond':           return { kind: 'polygon', points: diamondPoints(b) };
 		case 'parallelogram':     return { kind: 'polygon', points: parallelogramPoints(b) };
+		case 'trapezoid':         return { kind: 'polygon', points: trapezoidPoints(b) };
 		case 'hexagon':           return { kind: 'polygon', points: hexagonPoints(b) };
-		case 'triangle':          return { kind: 'polygon', points: trianglePoints(b) };
-		case 'card':              return { kind: 'polygon', points: cardPoints(b) };
-		case 'cloud':             return { kind: 'path', d: cloudPath(b) };
-		case 'callout':           return { kind: 'path', d: calloutPath(b) };
-		case 'document':          return { kind: 'path', d: documentPath(b) };
-		case 'cylinder':          return { kind: 'cylinder', body: cylinderBodyPath(b), top: cylinderTopEllipse(b) };
-		case 'roundedRectangle':  return { kind: 'rect', x: b.x, y: b.y, w: b.w, h: b.h, rx: roundedRectangleRx(b) };
-		case 'terminator':        return { kind: 'rect', x: b.x, y: b.y, w: b.w, h: b.h, rx: terminatorRx(b) };
-		case 'manualInput':       return { kind: 'polygon', points: manualInputPoints(b) };
+		case 'pentagon':          return { kind: 'polygon', points: pentagonPoints(b) };
 		case 'star':              return { kind: 'polygon', points: starPoints(b) };
-		case 'predefinedProcess': return { kind: 'compound', pieces: predefinedProcessPieces(b) };
+		// ---- flowchart ----
+		case 'terminator':        return { kind: 'rect', x: b.x, y: b.y, w: b.w, h: b.h, rx: terminatorRx(b) };
+		case 'document':          return { kind: 'path', d: documentPath(b) };
+		case 'multipleDocuments': return { kind: 'compound', pieces: multipleDocumentsPieces(b) };
+		case 'manualInput':       return { kind: 'polygon', points: manualInputPoints(b) };
+		case 'predefinedProcess': return { kind: 'path', d: predefinedProcessPath(b) };
+		case 'delay':             return { kind: 'path', d: delayPath(b) };
+		case 'offPageConnector':  return { kind: 'polygon', points: offPageConnectorPoints(b) };
+		// ---- architecture ----
+		case 'cylinder':          return { kind: 'cylinder', body: cylinderBodyPath(b), top: cylinderTopEllipse(b) };
+		case 'cloud':             return { kind: 'path', d: cloudPath(b) };
+		case 'queue':             return { kind: 'compound', pieces: queuePieces(b) };
 		case 'server':            return { kind: 'compound', pieces: serverPieces(b) };
 		case 'actor':             return { kind: 'compound', pieces: actorPieces(b) };
-		case 'queue':             return { kind: 'compound', pieces: queuePieces(b) };
+		case 'browser':           return { kind: 'compound', pieces: browserPieces(b) };
+		case 'mobile':            return { kind: 'compound', pieces: mobilePieces(b) };
+		case 'laptop':            return { kind: 'compound', pieces: laptopPieces(b) };
+		case 'desktop':           return { kind: 'compound', pieces: desktopPieces(b) };
+		case 'container':         return { kind: 'compound', pieces: containerPieces(b) };
+		case 'gear':              return { kind: 'compound', pieces: gearPieces(b) };
+		case 'loadBalancer':      return { kind: 'compound', pieces: loadBalancerPieces(b) };
+		case 'firewall':          return { kind: 'compound', pieces: firewallPieces(b) };
+		case 'lock':              return { kind: 'compound', pieces: lockPieces(b) };
+		case 'folder':            return { kind: 'compound', pieces: folderPieces(b) };
+		// ---- notes ----
+		case 'card':              return { kind: 'polygon', points: cardPoints(b) };
+		case 'callout':           return { kind: 'path', d: calloutPath(b) };
+		case 'stickyNote':        return { kind: 'compound', pieces: stickyNotePieces(b) };
 	}
 }
