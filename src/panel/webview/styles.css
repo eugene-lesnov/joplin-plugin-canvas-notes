@@ -61,6 +61,144 @@ html, body {
 	margin: 0 4px;
 }
 
+/* Dropdown split button: shows the last picked tool icon + a caret. */
+.toolbar-dropdown {
+	display: inline-flex;
+	align-items: center;
+}
+
+.tool-btn.toolbar-dropdown-btn {
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+	padding: 4px 4px 4px 6px;
+	width: auto;
+	min-width: 38px;
+}
+
+.toolbar-dropdown-icon {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 16px;
+	height: 16px;
+}
+
+.toolbar-dropdown-icon svg {
+	width: 16px;
+	height: 16px;
+	color: #ffffff;
+}
+
+.toolbar-dropdown-caret {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 12px;
+	height: 16px;
+	opacity: 0.7;
+}
+
+.toolbar-dropdown-caret:hover { opacity: 1; }
+
+.dropdown-caret-icon {
+	width: 8px;
+	height: 8px;
+	color: #ffffff;
+}
+
+/* Popover container, positioned by JS via fixed coordinates. */
+.toolbar-popover {
+	background: #ffffff;
+	color: #1f2c38;
+	border: 1px solid #c5d6ea;
+	border-radius: 6px;
+	box-shadow: 0 6px 24px rgba(0, 0, 0, 0.22);
+	padding: 8px;
+	min-width: 260px;
+	max-width: 360px;
+	z-index: 200;
+	user-select: none;
+	font-family: sans-serif;
+	font-size: 12px;
+}
+
+.toolbar-popover-content {
+	display: block;
+}
+
+.toolbar-popover-heading {
+	font-weight: 600;
+	font-size: 11px;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: #6b7a8a;
+	margin: 6px 4px 4px 4px;
+}
+
+.toolbar-popover-heading:first-child {
+	margin-top: 2px;
+}
+
+.toolbar-popover-grid {
+	display: grid;
+	grid-template-columns: repeat(4, 1fr);
+	gap: 2px;
+	margin-bottom: 4px;
+}
+
+.toolbar-popover-item {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: flex-start;
+	gap: 4px;
+	padding: 8px 4px;
+	background: transparent;
+	border: 1px solid transparent;
+	border-radius: 4px;
+	cursor: pointer;
+	color: inherit;
+	font: inherit;
+	text-align: center;
+	min-height: 60px;
+}
+
+.toolbar-popover-item:hover {
+	background: #f0f4ff;
+	border-color: #c5d6ea;
+}
+
+.toolbar-popover-item.active {
+	background: #e2ecff;
+	border-color: #4a90e2;
+}
+
+.toolbar-popover-icon {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 22px;
+	height: 22px;
+	color: #1f2c38;
+}
+
+.toolbar-popover-icon svg {
+	width: 20px;
+	height: 20px;
+}
+
+.toolbar-popover-label {
+	display: block;
+	font-size: 11px;
+	line-height: 1.2;
+	color: #1f2c38;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: normal;
+	word-break: break-word;
+}
+
 .tool-btn {
 	background: #34495e;
 	color: #fff;
@@ -228,26 +366,12 @@ html, body {
 }
 
 #canvas[data-tool="select"] { cursor: default; }
-#canvas[data-tool="arrow"]         { cursor: crosshair; }
-#canvas[data-tool="biarrow"]       { cursor: crosshair; }
-#canvas[data-tool="rectangle"],
-#canvas[data-tool="square"],
-#canvas[data-tool="circle"],
-#canvas[data-tool="ellipse"],
-#canvas[data-tool="triangle"],
-#canvas[data-tool="diamond"],
-#canvas[data-tool="parallelogram"],
-#canvas[data-tool="hexagon"],
-#canvas[data-tool="cylinder"],
-#canvas[data-tool="cloud"],
-#canvas[data-tool="card-shape"],
-#canvas[data-tool="callout"],
-#canvas[data-tool="document"],
-#canvas[data-tool="line"],
-#canvas[data-tool="line-dashed"],
-#canvas[data-tool="line-dotted"],
-#canvas[data-tool="text"],
-#canvas[data-tool="pen"] { cursor: crosshair; }
+/*
+ * All drawing tools share the same crosshair cursor; default any data-tool
+ * value (not just the known ones) to crosshair so newly added tool ids do
+ * not need a separate CSS rule.
+ */
+#canvas[data-tool]:not([data-tool="select"]) { cursor: crosshair; }
 
 /* Right-click context menu over the canvas. Position is set inline. */
 .ctx-menu {

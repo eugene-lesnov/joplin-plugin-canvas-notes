@@ -36,7 +36,15 @@ export type ShapeKind =
 	| 'cloud'
 	| 'card'
 	| 'callout'
-	| 'document';
+	| 'document'
+	| 'roundedRectangle'
+	| 'terminator'
+	| 'manualInput'
+	| 'predefinedProcess'
+	| 'server'
+	| 'actor'
+	| 'queue'
+	| 'star';
 
 /** Common fields for every element. */
 export interface BaseElement {
@@ -122,8 +130,17 @@ export interface ArrowEndpoint {
 /** Stroke dash style for line-like elements. */
 export type LineStrokeStyle = 'solid' | 'dashed' | 'dotted';
 
-/** Arrowhead presence on a line endpoint. */
-export type LineArrowKind = 'none' | 'arrow';
+/**
+ * Arrowhead variant on a line endpoint. Drives the SVG `marker-*`
+ * reference chosen at render time.
+ *  - 'none'            no marker;
+ *  - 'arrow'           classic filled triangle pointing along the line;
+ *  - 'triangle'        open (unfilled) triangle - UML generalization /
+ *                      realization;
+ *  - 'diamond-open'    UML aggregation;
+ *  - 'diamond-filled'  UML composition.
+ */
+export type LineArrowKind = 'none' | 'arrow' | 'triangle' | 'diamond-open' | 'diamond-filled';
 
 /**
  * Common fields for arrow/line elements. Both share endpoints, stroke

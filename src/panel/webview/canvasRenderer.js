@@ -30,6 +30,12 @@
 	const SVG_NS = 'http://www.w3.org/2000/svg';
 	const ARROWHEAD_ID = 'canvas-arrowhead';
 	const ARROWHEAD_START_ID = 'canvas-arrowhead-start';
+	const MARKER_TRIANGLE_ID = 'canvas-triangle';
+	const MARKER_TRIANGLE_START_ID = 'canvas-triangle-start';
+	const MARKER_DIAMOND_OPEN_ID = 'canvas-diamond-open';
+	const MARKER_DIAMOND_OPEN_START_ID = 'canvas-diamond-open-start';
+	const MARKER_DIAMOND_FILLED_ID = 'canvas-diamond-filled';
+	const MARKER_DIAMOND_FILLED_START_ID = 'canvas-diamond-filled-start';
 	const SELECTION_LAYER_ID = 'selection-overlay';
 	const ELEMENTS_LAYER_ID = 'elements-layer';
 
@@ -42,16 +48,53 @@
 
 	// ---- defs / layers ----------------------------------------------------
 
+	function arrowMarkerHtml(id) {
+		return (
+			`<marker id="${id}" viewBox="0 0 10 10" refX="9" refY="5" ` +
+			`markerWidth="8" markerHeight="8" orient="auto-start-reverse">` +
+			`<path d="M 0 0 L 10 5 L 0 10 z" fill="context-stroke"/></marker>`
+		);
+	}
+
+	function triangleMarkerHtml(id) {
+		return (
+			`<marker id="${id}" viewBox="0 0 12 12" refX="11" refY="6" ` +
+			`markerWidth="10" markerHeight="10" orient="auto-start-reverse">` +
+			`<path d="M 0 0 L 11 6 L 0 12 z" fill="#ffffff" stroke="context-stroke" stroke-width="1.2"/></marker>`
+		);
+	}
+
+	function diamondMarkerHtml(id, filled) {
+		return (
+			`<marker id="${id}" viewBox="0 0 16 10" refX="15" refY="5" ` +
+			`markerWidth="12" markerHeight="10" orient="auto-start-reverse">` +
+			`<path d="M 0 5 L 8 0 L 16 5 L 8 10 z" ` +
+			`fill="${filled ? 'context-stroke' : '#ffffff'}" stroke="context-stroke" stroke-width="1.2"/></marker>`
+		);
+	}
+
 	function buildDefs() {
 		const defs = document.createElementNS(SVG_NS, 'defs');
 		defs.innerHTML =
-			`<marker id="${ARROWHEAD_ID}" viewBox="0 0 10 10" refX="9" refY="5" ` +
-			`markerWidth="8" markerHeight="8" orient="auto-start-reverse">` +
-			`<path d="M 0 0 L 10 5 L 0 10 z" fill="context-stroke"/></marker>` +
-			`<marker id="${ARROWHEAD_START_ID}" viewBox="0 0 10 10" refX="9" refY="5" ` +
-			`markerWidth="8" markerHeight="8" orient="auto-start-reverse">` +
-			`<path d="M 0 0 L 10 5 L 0 10 z" fill="context-stroke"/></marker>`;
+			arrowMarkerHtml(ARROWHEAD_ID) +
+			arrowMarkerHtml(ARROWHEAD_START_ID) +
+			triangleMarkerHtml(MARKER_TRIANGLE_ID) +
+			triangleMarkerHtml(MARKER_TRIANGLE_START_ID) +
+			diamondMarkerHtml(MARKER_DIAMOND_OPEN_ID, false) +
+			diamondMarkerHtml(MARKER_DIAMOND_OPEN_START_ID, false) +
+			diamondMarkerHtml(MARKER_DIAMOND_FILLED_ID, true) +
+			diamondMarkerHtml(MARKER_DIAMOND_FILLED_START_ID, true);
 		return defs;
+	}
+
+	/** Picks the SVG marker id for the given endpoint kind. */
+	function markerIdFor(kind, position) {
+		if (!kind || kind === 'none') return null;
+		if (kind === 'arrow') return position === 'end' ? ARROWHEAD_ID : ARROWHEAD_START_ID;
+		if (kind === 'triangle') return position === 'end' ? MARKER_TRIANGLE_ID : MARKER_TRIANGLE_START_ID;
+		if (kind === 'diamond-open') return position === 'end' ? MARKER_DIAMOND_OPEN_ID : MARKER_DIAMOND_OPEN_START_ID;
+		if (kind === 'diamond-filled') return position === 'end' ? MARKER_DIAMOND_FILLED_ID : MARKER_DIAMOND_FILLED_START_ID;
+		return null;
 	}
 
 	// ---- attribute helpers ------------------------------------------------
@@ -134,8 +177,10 @@
 			stroke: e.stroke,
 			'stroke-width': e.strokeWidth,
 		});
-		if (endArrow === 'arrow') node.setAttribute('marker-end', `url(#${ARROWHEAD_ID})`);
-		if (startArrow === 'arrow') node.setAttribute('marker-start', `url(#${ARROWHEAD_START_ID})`);
+		const endId = markerIdFor(endArrow, 'end');
+		const startId = markerIdFor(startArrow, 'start');
+		if (endId) node.setAttribute('marker-end', `url(#${endId})`);
+		if (startId) node.setAttribute('marker-start', `url(#${startId})`);
 		const dash = dashArrayFor(strokeStyle, e.strokeWidth);
 		if (dash) node.setAttribute('stroke-dasharray', dash);
 		if (strokeStyle === 'solid') node.setAttribute('stroke-linecap', 'round');
@@ -143,9 +188,36 @@
 	}
 
 	/**
+	 * Renders a single ShapePiece into an SVG node. `fillOverride === 'none'`
+	 * means "stroke-only"; line pieces always have no fill.
+	 */
+	function renderShapePiece(p, e) {
+		const pieceFill = p.type === 'line' ? 'none'
+			: (p.fillOverride === 'none' ? 'none' : e.fill);
+		const common = { fill: pieceFill, stroke: e.stroke, 'stroke-width': e.strokeWidth };
+		switch (p.type) {
+			case 'rect': {
+				const attrs = Object.assign({ x: p.x, y: p.y, width: p.w, height: p.h }, common);
+				if (p.rx !== undefined) attrs.rx = p.rx;
+				return el('rect', attrs);
+			}
+			case 'ellipse':
+				return el('ellipse', Object.assign({ cx: p.cx, cy: p.cy, rx: p.rx, ry: p.ry }, common));
+			case 'circle':
+				return el('circle', Object.assign({ cx: p.cx, cy: p.cy, r: p.r }, common));
+			case 'polygon':
+				return el('polygon', Object.assign({ points: p.points }, common));
+			case 'path':
+				return el('path', Object.assign({ d: p.d }, common));
+			case 'line':
+				return el('line', Object.assign({ x1: p.x1, y1: p.y1, x2: p.x2, y2: p.y2 }, common));
+		}
+		return null;
+	}
+
+	/**
 	 * Renders a unified shape element. Dispatches through ShapeGeometry
-	 * for the actual path/polygon math. Cylinder is special: it produces
-	 * a body path plus a top ellipse for a visible rim.
+	 * for the actual primitive description.
 	 */
 	function renderShape(e) {
 		if (!ShapeGeometry) return null;
@@ -168,17 +240,32 @@
 			applyStyle(node);
 			return node;
 		}
-		// Cylinder: filled body + top rim outline.
-		const g = el('g');
-		const body = el('path', { d: draw.body });
-		applyStyle(body);
-		g.appendChild(body);
-		const rim = el('ellipse', {
-			cx: draw.top.cx, cy: draw.top.cy, rx: draw.top.rx, ry: draw.top.ry,
-			fill: 'none', stroke: e.stroke, 'stroke-width': e.strokeWidth,
-		});
-		g.appendChild(rim);
-		return g;
+		if (draw.kind === 'rect') {
+			const node = el('rect', { x: draw.x, y: draw.y, width: draw.w, height: draw.h, rx: draw.rx });
+			applyStyle(node);
+			return node;
+		}
+		if (draw.kind === 'cylinder') {
+			const g = el('g');
+			const body = el('path', { d: draw.body });
+			applyStyle(body);
+			g.appendChild(body);
+			const rim = el('ellipse', {
+				cx: draw.top.cx, cy: draw.top.cy, rx: draw.top.rx, ry: draw.top.ry,
+				fill: 'none', stroke: e.stroke, 'stroke-width': e.strokeWidth,
+			});
+			g.appendChild(rim);
+			return g;
+		}
+		if (draw.kind === 'compound') {
+			const g = el('g');
+			for (const piece of draw.pieces) {
+				const node = renderShapePiece(piece, e);
+				if (node) g.appendChild(node);
+			}
+			return g;
+		}
+		return null;
 	}
 
 	function freehandPathData(points) {

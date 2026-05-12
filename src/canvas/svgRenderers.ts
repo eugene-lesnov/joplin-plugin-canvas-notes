@@ -28,8 +28,14 @@ import {
 	CARD_TITLE_HEIGHT,
 	CARD_TITLE_MAX_CHARS,
 	CARD_TITLE_PAD_X,
+	MARKER_DIAMOND_FILLED_ID,
+	MARKER_DIAMOND_FILLED_START_ID,
+	MARKER_DIAMOND_OPEN_ID,
+	MARKER_DIAMOND_OPEN_START_ID,
+	MARKER_TRIANGLE_ID,
+	MARKER_TRIANGLE_START_ID,
 } from './svgConstants';
-import { shapeDraw } from './shapeGeometry';
+import { shapeDraw, ShapePiece } from './shapeGeometry';
 import { charsPerWidth, clampTitle, TEXT_LINE_HEIGHT_RATIO, wrapByWidth, wrapText } from './textWrap';
 import { formatNumber as num, safeText } from './xmlEscape';
 
@@ -67,9 +73,34 @@ function renderEllipse(e: EllipseElement): string {
 	);
 }
 
+/** Renders a single ShapePiece, using the shape's fill/stroke/sw. */
+function renderShapePiece(p: ShapePiece, fill: string, stroke: string, sw: string): string {
+	// `line` pieces never have a fill; everything else uses the shape's fill
+	// unless explicitly overridden (e.g. divider rectangles inside a compound).
+	const pieceFill = p.type === 'line' ? 'none'
+		: ('fillOverride' in p && p.fillOverride === 'none' ? 'none' : fill);
+	const style = ` fill="${pieceFill}" stroke="${stroke}" stroke-width="${sw}"`;
+	switch (p.type) {
+		case 'rect': {
+			const rx = p.rx !== undefined ? ` rx="${num(p.rx)}"` : '';
+			return `<rect x="${num(p.x)}" y="${num(p.y)}" width="${num(p.w)}" height="${num(p.h)}"${rx}${style}/>`;
+		}
+		case 'ellipse':
+			return `<ellipse cx="${num(p.cx)}" cy="${num(p.cy)}" rx="${num(p.rx)}" ry="${num(p.ry)}"${style}/>`;
+		case 'circle':
+			return `<circle cx="${num(p.cx)}" cy="${num(p.cy)}" r="${num(p.r)}"${style}/>`;
+		case 'polygon':
+			return `<polygon points="${p.points}"${style}/>`;
+		case 'path':
+			return `<path d="${p.d}"${style}/>`;
+		case 'line':
+			return `<line x1="${num(p.x1)}" y1="${num(p.y1)}" x2="${num(p.x2)}" y2="${num(p.y2)}"${style}/>`;
+	}
+}
+
 /**
  * Renders any element of the unified shape model. Each ShapeKind is
- * dispatched to a path/polygon description from `shapeGeometry.ts`.
+ * dispatched to a primitive description from `shapeGeometry.ts`.
  * Negative width/height are gracefully handled because the geometry
  * helpers operate on the absolute bounds (renderer normalizes here).
  */
@@ -84,19 +115,27 @@ function renderShape(e: ShapeElement): string {
 	const style = ` fill="${fill}" stroke="${stroke}" stroke-width="${sw}"`;
 
 	const draw = shapeDraw(e.shapeType, { x, y, w, h });
-	if (draw.kind === 'polygon') {
-		return `<polygon points="${draw.points}"${style}/>`;
+	switch (draw.kind) {
+		case 'polygon':
+			return `<polygon points="${draw.points}"${style}/>`;
+		case 'path':
+			return `<path d="${draw.d}"${style}/>`;
+		case 'rect':
+			return `<rect x="${num(draw.x)}" y="${num(draw.y)}" width="${num(draw.w)}" height="${num(draw.h)}" rx="${num(draw.rx)}"${style}/>`;
+		case 'cylinder': {
+			// Cylinder: filled body + visible top rim (stroked only).
+			const body = `<path d="${draw.body}"${style}/>`;
+			const top = draw.top;
+			const rim =
+				`<ellipse cx="${num(top.cx)}" cy="${num(top.cy)}" rx="${num(top.rx)}" ry="${num(top.ry)}"` +
+				` fill="none" stroke="${stroke}" stroke-width="${sw}"/>`;
+			return `<g>${body}${rim}</g>`;
+		}
+		case 'compound': {
+			const pieces = draw.pieces.map((p) => renderShapePiece(p, fill, stroke, sw)).join('');
+			return `<g>${pieces}</g>`;
+		}
 	}
-	if (draw.kind === 'path') {
-		return `<path d="${draw.d}"${style}/>`;
-	}
-	// Cylinder: filled body + visible top rim (stroked only).
-	const body = `<path d="${draw.body}"${style}/>`;
-	const top = draw.top;
-	const rim =
-		`<ellipse cx="${num(top.cx)}" cy="${num(top.cy)}" rx="${num(top.rx)}" ry="${num(top.ry)}"` +
-		` fill="none" stroke="${stroke}" stroke-width="${sw}"/>`;
-	return `<g>${body}${rim}</g>`;
 }
 
 /**
@@ -117,18 +156,34 @@ function dashArrayFor(style: 'solid' | 'dashed' | 'dotted', strokeWidth: number)
 }
 
 /**
+ * Maps an arrowhead kind to the SVG marker id for the matching end of the
+ * line. Returns null when no marker is needed.
+ */
+function markerIdFor(kind: 'none' | 'arrow' | 'triangle' | 'diamond-open' | 'diamond-filled',
+                    position: 'start' | 'end'): string | null {
+	if (kind === 'none') return null;
+	if (kind === 'arrow') return position === 'end' ? ARROWHEAD_ID : ARROWHEAD_START_ID;
+	if (kind === 'triangle') return position === 'end' ? MARKER_TRIANGLE_ID : MARKER_TRIANGLE_START_ID;
+	if (kind === 'diamond-open') return position === 'end' ? MARKER_DIAMOND_OPEN_ID : MARKER_DIAMOND_OPEN_START_ID;
+	if (kind === 'diamond-filled') return position === 'end' ? MARKER_DIAMOND_FILLED_ID : MARKER_DIAMOND_FILLED_START_ID;
+	return null;
+}
+
+/**
  * Unified renderer for arrow/line elements. The visual is fully driven
  * by `strokeStyle`, `startArrow`, `endArrow` rather than the legacy
  * type discriminator, so a single function covers solid/dashed/dotted
- * and one-way / bidirectional / unmarked variants.
+ * and one-way / bidirectional / UML-style variants.
  */
 function renderLineLike(e: ArrowElement | LineElement): string {
 	const startArrow = e.startArrow ?? 'none';
 	const endArrow = e.endArrow ?? (e.type === 'arrow' ? 'arrow' : 'none');
 	const strokeStyle = e.strokeStyle ?? 'solid';
 
-	const markerStart = startArrow === 'arrow' ? ` marker-start="url(#${ARROWHEAD_START_ID})"` : '';
-	const markerEnd = endArrow === 'arrow' ? ` marker-end="url(#${ARROWHEAD_ID})"` : '';
+	const startId = markerIdFor(startArrow, 'start');
+	const endId = markerIdFor(endArrow, 'end');
+	const markerStart = startId ? ` marker-start="url(#${startId})"` : '';
+	const markerEnd = endId ? ` marker-end="url(#${endId})"` : '';
 	const dash = dashArrayFor(strokeStyle, e.strokeWidth);
 	const dashAttr = dash ? ` stroke-dasharray="${dash}"` : '';
 	// Round caps look great for solid lines but make dotted patterns merge

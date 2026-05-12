@@ -27,6 +27,12 @@ import {
 	ARROWHEAD_ID,
 	ARROWHEAD_START_ID,
 	CANVAS_METADATA_ID,
+	MARKER_DIAMOND_FILLED_ID,
+	MARKER_DIAMOND_FILLED_START_ID,
+	MARKER_DIAMOND_OPEN_ID,
+	MARKER_DIAMOND_OPEN_START_ID,
+	MARKER_TRIANGLE_ID,
+	MARKER_TRIANGLE_START_ID,
 	SVG_NAMESPACE,
 	SVG_VERSION,
 } from './svgConstants';
@@ -60,17 +66,40 @@ export function serializeCanvasToSvg(doc: CanvasDocument): string {
 	// in Chromium, Firefox, Safari, and Joplin's renderer); for ancient
 	// consumers the arrowhead falls back to its default fill which still
 	// renders a triangle. The start marker uses orient="auto-start-reverse"
-	// so the same triangle geometry renders flipped at the line start.
+	// so the same geometry renders flipped at the line start.
+	//
+	// UML markers (triangle / diamond) come in two variants: outline-only
+	// (open) which uses fill="#ffffff" so the marker punches a hole through
+	// the line, and filled which uses fill="context-stroke" to inherit the
+	// line color.
+	const arrowMarker = (id: string) =>
+		`<marker id="${id}" viewBox="0 0 10 10" refX="9" refY="5"` +
+		` markerWidth="8" markerHeight="8" orient="auto-start-reverse">` +
+		`<path d="M 0 0 L 10 5 L 0 10 z" fill="context-stroke"/></marker>`;
+
+	const triangleMarker = (id: string) =>
+		`<marker id="${id}" viewBox="0 0 12 12" refX="11" refY="6"` +
+		` markerWidth="10" markerHeight="10" orient="auto-start-reverse">` +
+		`<path d="M 0 0 L 11 6 L 0 12 z"` +
+		` fill="#ffffff" stroke="context-stroke" stroke-width="1.2"/></marker>`;
+
+	const diamondMarker = (id: string, filled: boolean) =>
+		`<marker id="${id}" viewBox="0 0 16 10" refX="15" refY="5"` +
+		` markerWidth="12" markerHeight="10" orient="auto-start-reverse">` +
+		`<path d="M 0 5 L 8 0 L 16 5 L 8 10 z"` +
+		` fill="${filled ? 'context-stroke' : '#ffffff'}"` +
+		` stroke="context-stroke" stroke-width="1.2"/></marker>`;
+
 	const defs =
 		`<defs>` +
-			`<marker id="${ARROWHEAD_ID}" viewBox="0 0 10 10" refX="9" refY="5"` +
-				` markerWidth="8" markerHeight="8" orient="auto-start-reverse">` +
-				`<path d="M 0 0 L 10 5 L 0 10 z" fill="context-stroke"/>` +
-			`</marker>` +
-			`<marker id="${ARROWHEAD_START_ID}" viewBox="0 0 10 10" refX="9" refY="5"` +
-				` markerWidth="8" markerHeight="8" orient="auto-start-reverse">` +
-				`<path d="M 0 0 L 10 5 L 0 10 z" fill="context-stroke"/>` +
-			`</marker>` +
+			arrowMarker(ARROWHEAD_ID) +
+			arrowMarker(ARROWHEAD_START_ID) +
+			triangleMarker(MARKER_TRIANGLE_ID) +
+			triangleMarker(MARKER_TRIANGLE_START_ID) +
+			diamondMarker(MARKER_DIAMOND_OPEN_ID, false) +
+			diamondMarker(MARKER_DIAMOND_OPEN_START_ID, false) +
+			diamondMarker(MARKER_DIAMOND_FILLED_ID, true) +
+			diamondMarker(MARKER_DIAMOND_FILLED_START_ID, true) +
 		`</defs>`;
 
 	const json = JSON.stringify(doc);

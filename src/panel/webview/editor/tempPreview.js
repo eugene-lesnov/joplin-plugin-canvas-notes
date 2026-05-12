@@ -37,6 +37,16 @@
 		if (child) overlay.removeChild(child);
 	}
 
+	/** Marker id for the given endpoint kind. Mirrors canvasRenderer.js. */
+	function markerIdFor(kind, position) {
+		if (!kind || kind === 'none') return null;
+		if (kind === 'arrow') return position === 'end' ? 'canvas-arrowhead' : 'canvas-arrowhead-start';
+		if (kind === 'triangle') return position === 'end' ? 'canvas-triangle' : 'canvas-triangle-start';
+		if (kind === 'diamond-open') return position === 'end' ? 'canvas-diamond-open' : 'canvas-diamond-open-start';
+		if (kind === 'diamond-filled') return position === 'end' ? 'canvas-diamond-filled' : 'canvas-diamond-filled-start';
+		return null;
+	}
+
 	/**
 	 * Renders a temporary line/arrow segment between (from, to). `spec`
 	 * can be either a legacy string ('arrow' | 'line') or a full lineSpec
@@ -60,9 +70,11 @@
 		const endArrow = normalized.endArrow || 'none';
 		const startArrow = normalized.startArrow || 'none';
 
-		if (endArrow === 'arrow') line.setAttribute('marker-end', 'url(#canvas-arrowhead)');
+		const endId = markerIdFor(endArrow, 'end');
+		const startId = markerIdFor(startArrow, 'start');
+		if (endId) line.setAttribute('marker-end', `url(#${endId})`);
 		else line.removeAttribute('marker-end');
-		if (startArrow === 'arrow') line.setAttribute('marker-start', 'url(#canvas-arrowhead-start)');
+		if (startId) line.setAttribute('marker-start', `url(#${startId})`);
 		else line.removeAttribute('marker-start');
 
 		line.setAttribute('x1', String(from.x));

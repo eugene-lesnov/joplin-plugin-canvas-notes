@@ -20,6 +20,19 @@ export const ARROWHEAD_ID = 'canvas-arrowhead';
 /** id of the arrowhead marker used at the line start (bidirectional). */
 export const ARROWHEAD_START_ID = 'canvas-arrowhead-start';
 
+/**
+ * IDs of the UML-specific markers. Each marker variant exists in two
+ * orientations (end / start) so a line can mix start and end heads
+ * independently. Naming convention: `<style>` for the end-of-line marker,
+ * `<style>-start` for the start-of-line one.
+ */
+export const MARKER_TRIANGLE_ID = 'canvas-triangle';
+export const MARKER_TRIANGLE_START_ID = 'canvas-triangle-start';
+export const MARKER_DIAMOND_OPEN_ID = 'canvas-diamond-open';
+export const MARKER_DIAMOND_OPEN_START_ID = 'canvas-diamond-open-start';
+export const MARKER_DIAMOND_FILLED_ID = 'canvas-diamond-filled';
+export const MARKER_DIAMOND_FILLED_START_ID = 'canvas-diamond-filled-start';
+
 // ---- card geometry --------------------------------------------------------
 
 export const CARD_TITLE_HEIGHT = 28;

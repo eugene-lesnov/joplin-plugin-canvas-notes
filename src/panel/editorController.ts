@@ -41,6 +41,8 @@ const WEBVIEW_SCRIPTS = [
 	`./${WEBVIEW_DIR}/canvasHandles.js`,
 	`./${WEBVIEW_DIR}/textWrap.js`,
 	`./${WEBVIEW_DIR}/shapeGeometry.js`,
+	// Generic UI primitives used by the toolbar and other widgets.
+	`./${WEBVIEW_DIR}/editor/dropdown.js`,
 	// Renderer + ambient UI.
 	`./${WEBVIEW_DIR}/canvasRenderer.js`,
 	`./${WEBVIEW_DIR}/toolbar.js`,

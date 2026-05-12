@@ -34,10 +34,20 @@ const SUPPORTED_SHAPE_KINDS: ReadonlySet<string> = new Set<string>([
 	'card',
 	'callout',
 	'document',
+	'roundedRectangle',
+	'terminator',
+	'manualInput',
+	'predefinedProcess',
+	'server',
+	'actor',
+	'queue',
+	'star',
 ]);
 
 const SUPPORTED_STROKE_STYLES: ReadonlySet<string> = new Set<string>(['solid', 'dashed', 'dotted']);
-const SUPPORTED_ARROW_KINDS: ReadonlySet<string> = new Set<string>(['none', 'arrow']);
+const SUPPORTED_ARROW_KINDS: ReadonlySet<string> = new Set<string>([
+	'none', 'arrow', 'triangle', 'diamond-open', 'diamond-filled',
+]);
 
 function isObject(v: unknown): v is Record<string, unknown> {
 	return typeof v === 'object' && v !== null && !Array.isArray(v);

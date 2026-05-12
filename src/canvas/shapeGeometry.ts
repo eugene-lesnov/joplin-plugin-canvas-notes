@@ -190,26 +190,170 @@ export function documentPath(b: Box): string {
 }
 
 /**
+ * A primitive piece used in compound shapes. Each piece is rendered with
+ * the shared shape style (fill + stroke + strokeWidth), except for the
+ * cosmetic strokes inside compound shapes (e.g. divider lines inside a
+ * `predefinedProcess`) which use stroke-only via `fillOverride: 'none'`.
+ */
+export type ShapePiece =
+	| { type: 'rect'; x: number; y: number; w: number; h: number; rx?: number; fillOverride?: 'none' }
+	| { type: 'ellipse'; cx: number; cy: number; rx: number; ry: number; fillOverride?: 'none' }
+	| { type: 'polygon'; points: string; fillOverride?: 'none' }
+	| { type: 'path'; d: string; fillOverride?: 'none' }
+	| { type: 'line'; x1: number; y1: number; x2: number; y2: number }
+	| { type: 'circle'; cx: number; cy: number; r: number; fillOverride?: 'none' };
+
+/**
  * Describes how to render a given ShapeKind. The renderer (TS or JS)
  * consumes this and emits the appropriate SVG nodes. Pure data so the
  * description is identical in both runtimes.
+ *
+ * `compound` is used for shapes built from several primitives (server,
+ * actor, queue, predefinedProcess) where a single path would be much
+ * harder to read than a list of pieces.
  */
 export type ShapeDraw =
 	| { kind: 'polygon'; points: string }
 	| { kind: 'path'; d: string }
-	| { kind: 'cylinder'; body: string; top: { cx: number; cy: number; rx: number; ry: number } };
+	| { kind: 'rect'; x: number; y: number; w: number; h: number; rx: number }
+	| { kind: 'cylinder'; body: string; top: { cx: number; cy: number; rx: number; ry: number } }
+	| { kind: 'compound'; pieces: ShapePiece[] };
+
+/** Rounded rectangle - fixed corner radius capped to fit the smaller side. */
+export function roundedRectangleRx(b: Box): number {
+	return Math.min(12, b.w / 5, b.h / 5);
+}
+
+/** Terminator / pill - corner radius equals half of the smaller side. */
+export function terminatorRx(b: Box): number {
+	return Math.min(b.w, b.h) / 2;
+}
+
+/**
+ * Manual input - rectangle with the top edge slanted upward to the right.
+ * Used in flow charts for keyboard / interactive input.
+ */
+export function manualInputPoints(b: Box): string {
+	const slant = Math.min(b.h * 0.3, b.w * 0.2);
+	return pts([
+		[b.x, b.y + slant],
+		[b.x + b.w, b.y],
+		[b.x + b.w, b.y + b.h],
+		[b.x, b.y + b.h],
+	]);
+}
+
+/**
+ * Star: 5-point star inscribed into the bounding box. Outer radius fits
+ * the box, inner radius is ~0.4 of the outer for the classic look.
+ */
+export function starPoints(b: Box): string {
+	const cx = b.x + b.w / 2;
+	const cy = b.y + b.h / 2;
+	const rOuter = Math.min(b.w, b.h) / 2;
+	const rInner = rOuter * 0.4;
+	const coords: number[][] = [];
+	for (let i = 0; i < 10; i++) {
+		const angle = -Math.PI / 2 + i * Math.PI / 5;
+		const r = i % 2 === 0 ? rOuter : rInner;
+		coords.push([cx + r * Math.cos(angle), cy + r * Math.sin(angle)]);
+	}
+	return pts(coords);
+}
+
+/**
+ * Predefined process: rectangle with two vertical bars near the left and
+ * right edges. Classic flowchart subroutine glyph.
+ */
+export function predefinedProcessPieces(b: Box): ShapePiece[] {
+	const inset = Math.min(b.w * 0.12, 14);
+	return [
+		{ type: 'rect', x: b.x, y: b.y, w: b.w, h: b.h },
+		{ type: 'line', x1: b.x + inset, y1: b.y, x2: b.x + inset, y2: b.y + b.h },
+		{ type: 'line', x1: b.x + b.w - inset, y1: b.y, x2: b.x + b.w - inset, y2: b.y + b.h },
+	];
+}
+
+/**
+ * Server / rack: rectangle subdivided by two horizontal dividers + small
+ * status dot in the top-left band. Reads unmistakably as a 1U/2U server.
+ */
+export function serverPieces(b: Box): ShapePiece[] {
+	const bandH = Math.max(8, b.h / 4);
+	const dotR = Math.max(2, bandH * 0.18);
+	return [
+		{ type: 'rect', x: b.x, y: b.y, w: b.w, h: b.h, rx: 2 },
+		{ type: 'line', x1: b.x, y1: b.y + bandH, x2: b.x + b.w, y2: b.y + bandH },
+		{ type: 'line', x1: b.x, y1: b.y + bandH * 2, x2: b.x + b.w, y2: b.y + bandH * 2 },
+		{ type: 'circle', cx: b.x + bandH * 0.5, cy: b.y + bandH * 0.5, r: dotR, fillOverride: 'none' },
+		{ type: 'circle', cx: b.x + bandH * 0.5, cy: b.y + bandH * 1.5, r: dotR, fillOverride: 'none' },
+	];
+}
+
+/**
+ * Actor: classic stick figure - head + body + arms + two legs. Sized to
+ * fit the box; the figure is centered horizontally.
+ */
+export function actorPieces(b: Box): ShapePiece[] {
+	const cx = b.x + b.w / 2;
+	const headR = Math.min(b.w * 0.18, b.h * 0.12);
+	const headCy = b.y + headR;
+	const neckY = headCy + headR;
+	const hipY = b.y + b.h * 0.65;
+	const armY = neckY + (hipY - neckY) * 0.35;
+	const feetY = b.y + b.h;
+	const legSpread = b.w * 0.25;
+	const armSpread = b.w * 0.32;
+	return [
+		{ type: 'circle', cx: cx, cy: headCy, r: headR },
+		{ type: 'line', x1: cx, y1: neckY, x2: cx, y2: hipY },
+		{ type: 'line', x1: cx - armSpread, y1: armY, x2: cx + armSpread, y2: armY },
+		{ type: 'line', x1: cx, y1: hipY, x2: cx - legSpread, y2: feetY },
+		{ type: 'line', x1: cx, y1: hipY, x2: cx + legSpread, y2: feetY },
+	];
+}
+
+/**
+ * Queue: horizontal cylinder. Conceptually rotated cylinder; rendered as
+ * a rounded rectangle body + a left-side ellipse cap rim to suggest depth.
+ */
+export function queuePieces(b: Box): ShapePiece[] {
+	const rx = Math.min(b.w * 0.15, b.h * 0.5);
+	const ry = b.h / 2;
+	return [
+		// body: rectangle stretched across, closed on the right end.
+		{ type: 'path', d:
+			`M ${num(b.x + rx)} ${num(b.y)}` +
+			` L ${num(b.x + b.w)} ${num(b.y)}` +
+			` L ${num(b.x + b.w)} ${num(b.y + b.h)}` +
+			` L ${num(b.x + rx)} ${num(b.y + b.h)}` +
+			` A ${num(rx)} ${num(ry)} 0 0 1 ${num(b.x + rx)} ${num(b.y)}` +
+			` Z`,
+		},
+		// left cap rim (visible front face of the cylinder)
+		{ type: 'ellipse', cx: b.x + rx, cy: b.y + ry, rx: rx, ry: ry, fillOverride: 'none' },
+	];
+}
 
 /** Maps a ShapeKind + box to the drawing primitive(s) used for rendering. */
 export function shapeDraw(kind: ShapeKind, b: Box): ShapeDraw {
 	switch (kind) {
-		case 'diamond':       return { kind: 'polygon', points: diamondPoints(b) };
-		case 'parallelogram': return { kind: 'polygon', points: parallelogramPoints(b) };
-		case 'hexagon':       return { kind: 'polygon', points: hexagonPoints(b) };
-		case 'triangle':      return { kind: 'polygon', points: trianglePoints(b) };
-		case 'card':          return { kind: 'polygon', points: cardPoints(b) };
-		case 'cloud':         return { kind: 'path', d: cloudPath(b) };
-		case 'callout':       return { kind: 'path', d: calloutPath(b) };
-		case 'document':      return { kind: 'path', d: documentPath(b) };
-		case 'cylinder':      return { kind: 'cylinder', body: cylinderBodyPath(b), top: cylinderTopEllipse(b) };
+		case 'diamond':           return { kind: 'polygon', points: diamondPoints(b) };
+		case 'parallelogram':     return { kind: 'polygon', points: parallelogramPoints(b) };
+		case 'hexagon':           return { kind: 'polygon', points: hexagonPoints(b) };
+		case 'triangle':          return { kind: 'polygon', points: trianglePoints(b) };
+		case 'card':              return { kind: 'polygon', points: cardPoints(b) };
+		case 'cloud':             return { kind: 'path', d: cloudPath(b) };
+		case 'callout':           return { kind: 'path', d: calloutPath(b) };
+		case 'document':          return { kind: 'path', d: documentPath(b) };
+		case 'cylinder':          return { kind: 'cylinder', body: cylinderBodyPath(b), top: cylinderTopEllipse(b) };
+		case 'roundedRectangle':  return { kind: 'rect', x: b.x, y: b.y, w: b.w, h: b.h, rx: roundedRectangleRx(b) };
+		case 'terminator':        return { kind: 'rect', x: b.x, y: b.y, w: b.w, h: b.h, rx: terminatorRx(b) };
+		case 'manualInput':       return { kind: 'polygon', points: manualInputPoints(b) };
+		case 'star':              return { kind: 'polygon', points: starPoints(b) };
+		case 'predefinedProcess': return { kind: 'compound', pieces: predefinedProcessPieces(b) };
+		case 'server':            return { kind: 'compound', pieces: serverPieces(b) };
+		case 'actor':             return { kind: 'compound', pieces: actorPieces(b) };
+		case 'queue':             return { kind: 'compound', pieces: queuePieces(b) };
 	}
 }

@@ -53,6 +53,12 @@
 		 * Drawing tools are typically used to make several strokes in a row;
 		 * switching back to Select would be annoying.
 		 */
-		STICKY_TOOLS: new Set(['line', 'arrow', 'biarrow', 'line-dashed', 'line-dotted', 'pen']),
+		STICKY_TOOLS: new Set([
+			'line', 'arrow', 'biarrow',
+			'line-dashed', 'line-dotted', 'arrow-dashed',
+			'arrow-inheritance', 'arrow-realization',
+			'arrow-aggregation', 'arrow-composition', 'arrow-dependency',
+			'pen',
+		]),
 	};
 })();

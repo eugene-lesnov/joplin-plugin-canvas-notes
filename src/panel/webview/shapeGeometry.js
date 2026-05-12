@@ -136,6 +136,94 @@
 		);
 	}
 
+	function roundedRectangleRx(b) {
+		return Math.min(12, b.w / 5, b.h / 5);
+	}
+
+	function terminatorRx(b) {
+		return Math.min(b.w, b.h) / 2;
+	}
+
+	function manualInputPoints(b) {
+		const slant = Math.min(b.h * 0.3, b.w * 0.2);
+		return pts([
+			[b.x, b.y + slant],
+			[b.x + b.w, b.y],
+			[b.x + b.w, b.y + b.h],
+			[b.x, b.y + b.h],
+		]);
+	}
+
+	function starPoints(b) {
+		const cx = b.x + b.w / 2;
+		const cy = b.y + b.h / 2;
+		const rOuter = Math.min(b.w, b.h) / 2;
+		const rInner = rOuter * 0.4;
+		const coords = [];
+		for (let i = 0; i < 10; i++) {
+			const angle = -Math.PI / 2 + i * Math.PI / 5;
+			const r = i % 2 === 0 ? rOuter : rInner;
+			coords.push([cx + r * Math.cos(angle), cy + r * Math.sin(angle)]);
+		}
+		return pts(coords);
+	}
+
+	function predefinedProcessPieces(b) {
+		const inset = Math.min(b.w * 0.12, 14);
+		return [
+			{ type: 'rect', x: b.x, y: b.y, w: b.w, h: b.h },
+			{ type: 'line', x1: b.x + inset, y1: b.y, x2: b.x + inset, y2: b.y + b.h },
+			{ type: 'line', x1: b.x + b.w - inset, y1: b.y, x2: b.x + b.w - inset, y2: b.y + b.h },
+		];
+	}
+
+	function serverPieces(b) {
+		const bandH = Math.max(8, b.h / 4);
+		const dotR = Math.max(2, bandH * 0.18);
+		return [
+			{ type: 'rect', x: b.x, y: b.y, w: b.w, h: b.h, rx: 2 },
+			{ type: 'line', x1: b.x, y1: b.y + bandH, x2: b.x + b.w, y2: b.y + bandH },
+			{ type: 'line', x1: b.x, y1: b.y + bandH * 2, x2: b.x + b.w, y2: b.y + bandH * 2 },
+			{ type: 'circle', cx: b.x + bandH * 0.5, cy: b.y + bandH * 0.5, r: dotR, fillOverride: 'none' },
+			{ type: 'circle', cx: b.x + bandH * 0.5, cy: b.y + bandH * 1.5, r: dotR, fillOverride: 'none' },
+		];
+	}
+
+	function actorPieces(b) {
+		const cx = b.x + b.w / 2;
+		const headR = Math.min(b.w * 0.18, b.h * 0.12);
+		const headCy = b.y + headR;
+		const neckY = headCy + headR;
+		const hipY = b.y + b.h * 0.65;
+		const armY = neckY + (hipY - neckY) * 0.35;
+		const feetY = b.y + b.h;
+		const legSpread = b.w * 0.25;
+		const armSpread = b.w * 0.32;
+		return [
+			{ type: 'circle', cx: cx, cy: headCy, r: headR },
+			{ type: 'line', x1: cx, y1: neckY, x2: cx, y2: hipY },
+			{ type: 'line', x1: cx - armSpread, y1: armY, x2: cx + armSpread, y2: armY },
+			{ type: 'line', x1: cx, y1: hipY, x2: cx - legSpread, y2: feetY },
+			{ type: 'line', x1: cx, y1: hipY, x2: cx + legSpread, y2: feetY },
+		];
+	}
+
+	function queuePieces(b) {
+		const rx = Math.min(b.w * 0.15, b.h * 0.5);
+		const ry = b.h / 2;
+		return [
+			{ type: 'path', d:
+				'M ' + fmt(b.x + rx) + ' ' + fmt(b.y) +
+				' L ' + fmt(b.x + b.w) + ' ' + fmt(b.y) +
+				' L ' + fmt(b.x + b.w) + ' ' + fmt(b.y + b.h) +
+				' L ' + fmt(b.x + rx) + ' ' + fmt(b.y + b.h) +
+				' A ' + fmt(rx) + ' ' + fmt(ry) + ' 0 0 1 ' + fmt(b.x + rx) + ' ' + fmt(b.y) +
+				' Z',
+			},
+			{ type: 'ellipse', cx: b.x + rx, cy: b.y + ry, rx: rx, ry: ry, fillOverride: 'none' },
+		];
+	}
+
 	function documentPath(b) {
 		const x = b.x, y = b.y, w = b.w, h = b.h;
 		const waveAmp = Math.min(h * 0.15, 16);
@@ -168,16 +256,24 @@
 			h: Math.abs(b.h),
 		};
 		switch (kind) {
-			case 'diamond':       return { kind: 'polygon', points: diamondPoints(box) };
-			case 'parallelogram': return { kind: 'polygon', points: parallelogramPoints(box) };
-			case 'hexagon':       return { kind: 'polygon', points: hexagonPoints(box) };
-			case 'triangle':      return { kind: 'polygon', points: trianglePoints(box) };
-			case 'card':          return { kind: 'polygon', points: cardPoints(box) };
-			case 'cloud':         return { kind: 'path', d: cloudPath(box) };
-			case 'callout':       return { kind: 'path', d: calloutPath(box) };
-			case 'document':      return { kind: 'path', d: documentPath(box) };
-			case 'cylinder':      return { kind: 'cylinder', body: cylinderBodyPath(box), top: cylinderTopEllipse(box) };
-			default:              return null;
+			case 'diamond':           return { kind: 'polygon', points: diamondPoints(box) };
+			case 'parallelogram':     return { kind: 'polygon', points: parallelogramPoints(box) };
+			case 'hexagon':           return { kind: 'polygon', points: hexagonPoints(box) };
+			case 'triangle':          return { kind: 'polygon', points: trianglePoints(box) };
+			case 'card':              return { kind: 'polygon', points: cardPoints(box) };
+			case 'cloud':             return { kind: 'path', d: cloudPath(box) };
+			case 'callout':           return { kind: 'path', d: calloutPath(box) };
+			case 'document':          return { kind: 'path', d: documentPath(box) };
+			case 'cylinder':          return { kind: 'cylinder', body: cylinderBodyPath(box), top: cylinderTopEllipse(box) };
+			case 'roundedRectangle':  return { kind: 'rect', x: box.x, y: box.y, w: box.w, h: box.h, rx: roundedRectangleRx(box) };
+			case 'terminator':        return { kind: 'rect', x: box.x, y: box.y, w: box.w, h: box.h, rx: terminatorRx(box) };
+			case 'manualInput':       return { kind: 'polygon', points: manualInputPoints(box) };
+			case 'star':              return { kind: 'polygon', points: starPoints(box) };
+			case 'predefinedProcess': return { kind: 'compound', pieces: predefinedProcessPieces(box) };
+			case 'server':            return { kind: 'compound', pieces: serverPieces(box) };
+			case 'actor':             return { kind: 'compound', pieces: actorPieces(box) };
+			case 'queue':             return { kind: 'compound', pieces: queuePieces(box) };
+			default:                  return null;
 		}
 	}
 
