@@ -11,7 +11,7 @@
  */
 
 import { assertCanvasDocument } from './canvasModel';
-import { CanvasDocument, DEFAULT_SHAPE_LABEL } from './canvasTypes';
+import { CanvasDocument, DEFAULT_LINE_LABEL, DEFAULT_SHAPE_LABEL } from './canvasTypes';
 import { CANVAS_METADATA_ID } from './svgConstants';
 import { unescapeXml } from './xmlEscape';
 
@@ -117,6 +117,32 @@ function normalizeShapeLabel(raw: Record<string, unknown>): void {
 	raw.label = normalized;
 }
 
+const LINE_LABEL_POSITIONS: ReadonlySet<string> = new Set<string>(['center']);
+const LINE_LABEL_ORIENTATIONS: ReadonlySet<string> = new Set<string>(['parallel', 'horizontal']);
+
+/**
+ * Fills the embedded line/arrow label with safe defaults. Same intent
+ * as normalizeShapeLabel, but for line-specific fields.
+ */
+function normalizeLineLabel(raw: Record<string, unknown>): void {
+	const existing = isPlainObject(raw.label) ? raw.label : {};
+	const position = existing.position;
+	const orientation = existing.orientation;
+	const normalized: Record<string, unknown> = {
+		...existing,
+		text: stringOr(existing.text, DEFAULT_LINE_LABEL.text),
+		fontSize: numberOr(existing.fontSize, DEFAULT_LINE_LABEL.fontSize),
+		color: stringOr(existing.color, DEFAULT_LINE_LABEL.color),
+		position: typeof position === 'string' && LINE_LABEL_POSITIONS.has(position)
+			? position
+			: DEFAULT_LINE_LABEL.position,
+		orientation: typeof orientation === 'string' && LINE_LABEL_ORIENTATIONS.has(orientation)
+			? orientation
+			: DEFAULT_LINE_LABEL.orientation,
+	};
+	raw.label = normalized;
+}
+
 /**
  * Walks the parsed JSON document and normalizes elements that need
  * fallback handling.
@@ -128,7 +154,10 @@ function normalizeDocument(parsed: unknown): void {
 	for (const el of elements) {
 		if (!isPlainObject(el)) continue;
 		if (el.type === 'text') normalizeTextElement(el);
-		else if (el.type === 'arrow' || el.type === 'line') normalizeLineLikeElement(el);
+		else if (el.type === 'arrow' || el.type === 'line') {
+			normalizeLineLikeElement(el);
+			normalizeLineLabel(el);
+		}
 		if (typeof el.type === 'string' && LABELED_SHAPE_TYPES.has(el.type)) {
 			normalizeShapeLabel(el);
 		}

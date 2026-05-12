@@ -129,6 +129,45 @@ export const DEFAULT_SHAPE_LABEL: ShapeLabel = {
 	verticalAlign: 'middle',
 };
 
+/**
+ * Position of a label along a line/arrow. MVP supports only 'center'
+ * (geometric midpoint between the endpoints). Reserved for future
+ * variants like 'start' / 'end' or a numeric ratio.
+ */
+export type LineLabelPosition = 'center';
+
+/**
+ * How the label is oriented relative to the line:
+ *  - 'parallel':   text rotates to follow the line direction (with an
+ *                  upright flip so reading direction stays L-to-R),
+ *                  positioned above the line. Word-wrapped by line length.
+ *  - 'horizontal': text stays horizontal regardless of line angle,
+ *                  centered on the midpoint with a backdrop.
+ */
+export type LineLabelOrientation = 'parallel' | 'horizontal';
+
+/**
+ * Embedded label attached to a line / arrow. Same model intent as
+ * ShapeLabel (plain text, theme-aware color), but the placement is
+ * driven by `position` along the segment rather than an alignment box.
+ */
+export interface LineLabel {
+	/** User-entered text. Empty string means no visible label. */
+	text: string;
+	fontSize: number;
+	color: string;
+	position: LineLabelPosition;
+	orientation: LineLabelOrientation;
+}
+
+export const DEFAULT_LINE_LABEL: LineLabel = {
+	text: '',
+	fontSize: 14,
+	color: '#222222',
+	position: 'center',
+	orientation: 'parallel',
+};
+
 /** Rectangle defined by top-left corner + size. */
 export interface RectangleElement extends BaseElement, ShapeStyle {
 	type: 'rectangle';
@@ -233,6 +272,8 @@ export interface ArrowElement extends BaseElement {
 	strokeStyle?: LineStrokeStyle;
 	startArrow?: LineArrowKind;
 	endArrow?: LineArrowKind;
+	/** Optional embedded label rendered near the segment midpoint. */
+	label?: LineLabel;
 }
 
 /** Plain line (no marker). Same shape as ArrowElement but visually undecorated. */
@@ -245,6 +286,8 @@ export interface LineElement extends BaseElement {
 	strokeStyle?: LineStrokeStyle;
 	startArrow?: LineArrowKind;
 	endArrow?: LineArrowKind;
+	/** Optional embedded label rendered near the segment midpoint. */
+	label?: LineLabel;
 }
 
 /**

@@ -166,12 +166,12 @@
 	 * so a single function handles solid/dashed/dotted and one-way /
 	 * bidirectional / unmarked variants.
 	 */
-	function renderSegment(e) {
+	function renderSegment(e, ctx) {
 		const startArrow = e.startArrow || 'none';
 		const endArrow = e.endArrow || (e.type === 'arrow' ? 'arrow' : 'none');
 		const strokeStyle = e.strokeStyle || 'solid';
 
-		const node = el('line', {
+		const lineNode = el('line', {
 			x1: e.from.x, y1: e.from.y,
 			x2: e.to.x,   y2: e.to.y,
 			stroke: e.stroke,
@@ -179,12 +179,148 @@
 		});
 		const endId = markerIdFor(endArrow, 'end');
 		const startId = markerIdFor(startArrow, 'start');
-		if (endId) node.setAttribute('marker-end', `url(#${endId})`);
-		if (startId) node.setAttribute('marker-start', `url(#${startId})`);
+		if (endId) lineNode.setAttribute('marker-end', `url(#${endId})`);
+		if (startId) lineNode.setAttribute('marker-start', `url(#${startId})`);
 		const dash = dashArrayFor(strokeStyle, e.strokeWidth);
-		if (dash) node.setAttribute('stroke-dasharray', dash);
-		if (strokeStyle === 'solid') node.setAttribute('stroke-linecap', 'round');
-		return node;
+		if (dash) lineNode.setAttribute('stroke-dasharray', dash);
+		if (strokeStyle === 'solid') lineNode.setAttribute('stroke-linecap', 'round');
+
+		const labelGroup = renderLineLabel(e, ctx);
+		if (!labelGroup) return lineNode;
+		const g = el('g');
+		g.appendChild(lineNode);
+		g.appendChild(labelGroup);
+		return g;
+	}
+
+	// Inner padding around horizontal line-label text. Mirrors
+	// LINE_LABEL_PAD_* in src/canvas/svgRenderers.ts.
+	const LINE_LABEL_PAD_X = 4;
+	const LINE_LABEL_PAD_Y = 2;
+	const LINE_LABEL_CHAR_WIDTH_RATIO = 0.6;
+
+	/** Endpoint padding so the label never overlaps the arrowhead. */
+	function lineLabelEndPad(strokeWidth) {
+		return Math.max(20, strokeWidth * 4);
+	}
+
+	/**
+	 * Builds the line-label <g>. Dispatches on label.orientation:
+	 *   'parallel'   - rotated above the line, length-wrapped;
+	 *   'horizontal' - legacy: horizontal text + backdrop on the midpoint.
+	 * Returns null when there is nothing to draw.
+	 */
+	function renderLineLabel(e, ctx) {
+		const label = e.label;
+		if (!label || !label.text) return null;
+
+		const cx = (e.from.x + e.to.x) / 2;
+		const cy = (e.from.y + e.to.y) / 2;
+		const orientation = label.orientation || 'parallel';
+
+		if (orientation === 'parallel') {
+			return renderParallelLineLabel(e, cx, cy, label);
+		}
+		return renderHorizontalLineLabel(cx, cy, label, ctx);
+	}
+
+	/**
+	 * Parallel mode: rotate text to follow the line, place above the
+	 * stroke, word-wrap by the segment length.
+	 */
+	function renderParallelLineLabel(e, cx, cy, label) {
+		const dx = e.to.x - e.from.x;
+		const dy = e.to.y - e.from.y;
+		const length = Math.hypot(dx, dy);
+		if (length < 1) return null;
+
+		let angleDeg = Math.atan2(dy, dx) * 180 / Math.PI;
+		if (angleDeg > 90) angleDeg -= 180;
+		else if (angleDeg < -90) angleDeg += 180;
+
+		const fontSize = label.fontSize;
+		const lineHeight = fontSize * TextWrap.TEXT_LINE_HEIGHT_RATIO;
+		const endPad = lineLabelEndPad(e.strokeWidth);
+		const availableWidth = Math.max(1, length - endPad * 2);
+		const maxChars = TextWrap.charsPerWidth(availableWidth, fontSize);
+		const lines = TextWrap.wrapByWidth(label.text, maxChars);
+		if (lines.length === 0) return null;
+
+		const totalHeight = lines.length * lineHeight;
+		const gap = Math.max(fontSize * 0.3, e.strokeWidth + 2);
+		const firstBaselineY = -gap - totalHeight + fontSize;
+
+		const g = el('g', {
+			transform: `translate(${cx} ${cy}) rotate(${angleDeg})`,
+			'pointer-events': 'none',
+		});
+		const text = el('text', {
+			x: 0, y: firstBaselineY,
+			'font-size': fontSize,
+			'font-family': 'sans-serif',
+			fill: label.color,
+			'text-anchor': 'middle',
+			'pointer-events': 'none',
+			'data-line-label': '1',
+		});
+		lines.forEach((line, idx) => {
+			const tspan = el('tspan', { x: 0 });
+			if (idx > 0) tspan.setAttribute('dy', String(lineHeight));
+			tspan.setAttribute('xml:space', 'preserve');
+			tspan.textContent = line.length === 0 ? '\u200b' : line;
+			text.appendChild(tspan);
+		});
+		g.appendChild(text);
+		return g;
+	}
+
+	/**
+	 * Horizontal mode: legacy text + backdrop centered on the midpoint.
+	 * Used only when label.orientation === 'horizontal'.
+	 */
+	function renderHorizontalLineLabel(cx, cy, label, ctx) {
+		const lines = String(label.text).split('\n');
+		let longest = 0;
+		for (const l of lines) if (l.length > longest) longest = l.length;
+		const fontSize = label.fontSize;
+		const lineHeight = fontSize * TextWrap.TEXT_LINE_HEIGHT_RATIO;
+		const textWidth = Math.max(1, Math.ceil(longest * fontSize * LINE_LABEL_CHAR_WIDTH_RATIO));
+		const textHeight = Math.ceil(lines.length * lineHeight);
+
+		const rectW = textWidth + LINE_LABEL_PAD_X * 2;
+		const rectH = textHeight + LINE_LABEL_PAD_Y * 2;
+		const rectX = cx - rectW / 2;
+		const rectY = cy - rectH / 2;
+		const bg = (ctx && ctx.canvasBackground) ? ctx.canvasBackground : '#ffffff';
+
+		const g = el('g');
+		const backdrop = el('rect', {
+			x: rectX, y: rectY, width: rectW, height: rectH,
+			fill: bg, stroke: 'none',
+			'pointer-events': 'none',
+			'data-line-label-bg': '1',
+		});
+		g.appendChild(backdrop);
+
+		const firstBaselineY = cy - textHeight / 2 + fontSize;
+		const text = el('text', {
+			x: cx, y: firstBaselineY,
+			'font-size': fontSize,
+			'font-family': 'sans-serif',
+			fill: label.color,
+			'text-anchor': 'middle',
+			'pointer-events': 'none',
+			'data-line-label': '1',
+		});
+		lines.forEach((line, idx) => {
+			const tspan = el('tspan', { x: cx });
+			if (idx > 0) tspan.setAttribute('dy', String(lineHeight));
+			tspan.setAttribute('xml:space', 'preserve');
+			tspan.textContent = line.length === 0 ? '\u200b' : line;
+			text.appendChild(tspan);
+		});
+		g.appendChild(text);
+		return g;
 	}
 
 	/**
@@ -497,7 +633,7 @@
 		return g;
 	}
 
-	function renderElement(e) {
+	function renderElement(e, ctx) {
 		switch (e.type) {
 			case 'rectangle':
 			case 'square':    return withLabel(renderRectLike(e), e);
@@ -505,7 +641,7 @@
 			case 'ellipse':   return withLabel(renderEllipse(e), e);
 			case 'shape':     return withLabel(renderShape(e), e);
 			case 'arrow':
-			case 'line':      return renderSegment(e);
+			case 'line':      return renderSegment(e, ctx);
 			case 'freehand':  return renderFreehand(e);
 			case 'noteCard':
 			case 'todoCard':  return renderCard(e);
@@ -543,9 +679,10 @@
 		const layer = el('g', { id: ELEMENTS_LAYER_ID });
 		svg.appendChild(layer);
 
+		const ctx = { canvasBackground: doc.background || '#ffffff' };
 		const sorted = (doc.elements || []).slice().sort((a, b) => a.z - b.z);
 		for (const item of sorted) {
-			const node = renderElement(item);
+			const node = renderElement(item, ctx);
 			if (!node) continue;
 			node.setAttribute('data-element-id', item.id);
 			layer.appendChild(node);

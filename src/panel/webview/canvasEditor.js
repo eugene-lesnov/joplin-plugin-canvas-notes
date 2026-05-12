@@ -140,6 +140,21 @@
 		const next = clampFontSize(currentTextFontSize() + delta);
 		if (next === currentTextFontSize()) return;
 
+		// Shape/line label editing: пишем в модель (label.fontSize) и
+		// синхронизируем размер textarea. pendingTextFontSize не
+		// трогаем — это прерогатива TextElement.
+		if (textEditor && (textEditor.kind === 'shapeLabel' || textEditor.kind === 'lineLabel')) {
+			textEditor.fontSize = next;
+			setEmbeddedLabelFontSize(textEditor.elementId, textEditor.kind, next);
+			syncTextEditorFontSize(textEditor.elementId, next);
+			// Размер textarea в wrapper-режиме авторесайзится по
+			// контенту; при смене fontSize это вызываем явно,
+			// поскольку высота изменилась, а input-событие не случилось.
+			autoResizeShapeLabelTextarea();
+			updateTextControls();
+			return;
+		}
+
 		pendingTextFontSize = next;
 
 		const sel = getSelectedTextElement();
@@ -169,6 +184,27 @@
 		}
 
 		updateTextControls();
+	}
+
+	/**
+	 * Пишет новый fontSize во вложенный label фигуры или линии.
+	 * Общий helper для обоих киндов, логика одинаковая.
+	 */
+	function setEmbeddedLabelFontSize(elementId, kind, fontSize) {
+		const defaults = kind === 'lineLabel' ? DEFAULT_LINE_LABEL : DEFAULT_SHAPE_LABEL;
+		const matchType = (e) => kind === 'lineLabel'
+			? (e.type === 'arrow' || e.type === 'line')
+			: LABELED_SHAPE_TYPES.has(e.type);
+		const changed = mapElement(elementId, (e) => {
+			if (!matchType(e)) return e;
+			const prev = e.label || defaults;
+			if ((prev.fontSize || defaults.fontSize) === fontSize) return e;
+			const nextLabel = Object.assign({}, defaults, prev, { fontSize });
+			return Object.assign({}, e, { label: nextLabel });
+		});
+		if (!changed) return;
+		markDirty();
+		render();
 	}
 
 	function syncTextEditorFontSize(elementId, fontSize) {
@@ -259,12 +295,10 @@
 		const group = $('text-controls');
 		if (!group) return;
 		// Контролы видны если есть с чем работать: выбранный текст,
-		// активный оверлей-редактор для TextElement или просто включенный
-		// инструмент Text. Для редактирования shape label контролы скрыты
-		// в этой итерации - размер label правится напрямую в модели.
-		const editingText = !!textEditor && textEditor.kind === 'text';
+		// любой активный оверлей-редактор (text / shape label /
+		// line label) или просто включенный инструмент Text.
 		const visible = !!getSelectedTextElement()
-			|| editingText
+			|| !!textEditor
 			|| activeTool === 'text';
 		group.hidden = !visible;
 		if (!visible) return;
@@ -1145,6 +1179,18 @@
 			return;
 		}
 
+		if (hit.type === 'arrow' || hit.type === 'line') {
+			// Editing is anchored to the label itself, not the stroke -
+			// matches draw.io behavior and avoids accidental editor opens
+			// when the user just wants to grab/drag a labeled line. An empty
+			// label still opens the editor so it stays reachable on first use.
+			const hasLabel = !!(hit.label && hit.label.text);
+			if (!hasLabel || Geometry.hitTestLineLabel(hit, p.x, p.y)) {
+				editLineLabel(hit);
+			}
+			return;
+		}
+
 		if (hit.type !== 'noteCard' && hit.type !== 'todoCard') return;
 		// Persist the current canvas state before navigating away.
 		if (isDirty()) {
@@ -1173,6 +1219,32 @@
 		align: 'center',
 		verticalAlign: 'middle',
 	};
+
+	const DEFAULT_LINE_LABEL = {
+		text: '',
+		fontSize: 14,
+		color: '#222222',
+		position: 'center',
+		orientation: 'parallel',
+	};
+
+	// Textarea size for line label editing, in document units.
+	// Width is adaptive: for parallel-oriented labels we match the
+	// available segment length so the user sees how text will wrap before
+	// committing. Min/max clamp keeps the box usable on very short or
+	// very long lines.
+	const LINE_LABEL_EDIT_W_MIN = 120;
+	const LINE_LABEL_EDIT_W_MAX = 400;
+	const LINE_LABEL_EDIT_H = 60;
+
+	/**
+	 * Endpoint padding so the editor width matches the renderer's
+	 * available-width calculation. Keep in sync with `lineLabelEndPad`
+	 * in canvasRenderer.js / svgRenderers.ts.
+	 */
+	function lineLabelEditEndPad(strokeWidth) {
+		return Math.max(20, strokeWidth * 4);
+	}
 
 	/**
 	 * Bounding box used for label positioning. Mirrors labelBoxFor() on the
@@ -1245,6 +1317,51 @@
 	}
 
 	/**
+	 * Opens the textarea overlay centered on a line/arrow midpoint so the
+	 * user can edit its embedded label. Uses a fixed-size overlay box
+	 * centered on the segment midpoint - lines have no inherent rectangle
+	 * to anchor to.
+	 */
+	function editLineLabel(target) {
+		const label = target.label || DEFAULT_LINE_LABEL;
+		const cx = (target.from.x + target.to.x) / 2;
+		const cy = (target.from.y + target.to.y) / 2;
+		const bg = (doc && doc.background) ? doc.background : '#ffffff';
+
+		// Width matches the renderer's available-along-the-line budget so
+		// what the user types maps directly to how the label will wrap.
+		// Clamped so the editor is usable on extreme line lengths.
+		const dx = target.to.x - target.from.x;
+		const dy = target.to.y - target.from.y;
+		const length = Math.hypot(dx, dy);
+		const endPad = lineLabelEditEndPad(target.strokeWidth || 1);
+		const available = Math.max(1, length - endPad * 2);
+		const w = Math.max(LINE_LABEL_EDIT_W_MIN, Math.min(LINE_LABEL_EDIT_W_MAX, available));
+
+		const view = {
+			kind: 'lineLabel',
+			elementId: target.id,
+			box: {
+				x: cx - w / 2,
+				y: cy - LINE_LABEL_EDIT_H / 2,
+				w,
+				h: LINE_LABEL_EDIT_H,
+			},
+			originalText: label.text || '',
+			fontSize: label.fontSize || DEFAULT_LINE_LABEL.fontSize,
+			color: label.color || DEFAULT_LINE_LABEL.color,
+			background: bg,
+			textAlign: 'center',
+			verticalAlign: 'middle',
+		};
+		openTextOverlayEditor(view, (nextText) => {
+			const nextLabelText = nextText || '';
+			if (nextLabelText === (label.text || '')) return;
+			updateLineLabelText(target.id, nextLabelText);
+		});
+	}
+
+	/**
 	 * Opens an HTML <textarea> positioned over a document-space box,
 	 * mapped through the SVG's screen CTM so zoom / scroll / viewBox are
 	 * respected. Closes on blur (commit), Ctrl/Cmd+Enter (commit) and
@@ -1304,11 +1421,12 @@
 		ta.setAttribute('wrap', 'soft');
 
 		let wrapper = null;
-		if (view.kind === 'shapeLabel') {
-			// Shape labels are centered inside the shape's bbox. A flexbox
-			// wrapper handles vertical alignment; the textarea auto-grows in
-			// height based on its content so the text block stays optically
-			// centered while typing.
+		const useWrapper = view.kind === 'shapeLabel' || view.kind === 'lineLabel';
+		if (useWrapper) {
+			// Shape and line labels are centered inside their reference box.
+			// A flexbox wrapper handles vertical alignment; the textarea
+			// auto-grows in height based on its content so the text block
+			// stays optically centered while typing.
 			wrapper = document.createElement('div');
 			wrapper.setAttribute('style',
 				'position:fixed;' +
@@ -1355,7 +1473,7 @@
 			fontSize: view.fontSize || TEXT_DEFAULT_FONT_SIZE,
 			textarea: ta,
 			wrapper,
-			hiddenNode: null,
+			hiddenNodes: [],
 			onCommit: typeof onCommit === 'function' ? onCommit : null,
 			focusHandle: null,
 			maxHeightPx: heightPx,
@@ -1367,9 +1485,9 @@
 		ta.addEventListener('keydown', onTextEditorKeyDown);
 		ta.addEventListener('blur', onTextEditorBlur);
 
-		// Auto-grow the shape-label textarea so the centered text block
-		// expands downward as the user types and stays vertically centered.
-		if (view.kind === 'shapeLabel') {
+		// Auto-grow the label textarea so the centered text block expands
+		// downward as the user types and stays vertically centered.
+		if (useWrapper) {
 			ta.addEventListener('input', autoResizeShapeLabelTextarea);
 			autoResizeShapeLabelTextarea();
 		}
@@ -1391,7 +1509,8 @@
 	 * shape's bbox). Called on init and on every input event.
 	 */
 	function autoResizeShapeLabelTextarea() {
-		if (!textEditor || textEditor.kind !== 'shapeLabel') return;
+		if (!textEditor) return;
+		if (textEditor.kind !== 'shapeLabel' && textEditor.kind !== 'lineLabel') return;
 		const ta = textEditor.textarea;
 		ta.style.height = 'auto';
 		const max = textEditor.maxHeightPx || ta.scrollHeight;
@@ -1401,9 +1520,13 @@
 	/**
 	 * Hides the on-canvas representation of the element being edited so
 	 * the textarea is not visually duplicated by the rendered text.
-	 *  - 'text' kind: hides the whole element node;
-	 *  - 'shapeLabel': hides only the <text data-shape-label> child so the
-	 *    shape itself stays visible underneath the (translucent) textarea.
+	 *  - 'text': hides the whole element node;
+	 *  - 'shapeLabel': hides only the <text data-shape-label> child;
+	 *  - 'lineLabel': hides the label backdrop + text children, but keeps
+	 *    the line itself visible so the user sees what they are labeling.
+	 *
+	 * Multiple sub-nodes can be hidden at once; they are tracked in
+	 * textEditor.hiddenNodes and restored on close.
 	 */
 	function hideEditedTextNode(elementId, kind) {
 		if (!textEditor) return;
@@ -1412,16 +1535,25 @@
 		const escId = String(elementId).replace(/["\\]/g, '\\$&');
 		const node = root.querySelector(`[data-element-id="${escId}"]`);
 		if (!node) return;
-		if (kind === 'shapeLabel') {
-			const labelNode = node.querySelector('[data-shape-label="1"]');
-			if (labelNode) {
-				labelNode.style.visibility = 'hidden';
-				textEditor.hiddenNode = labelNode;
+
+		const hideAll = (selector) => {
+			const found = node.querySelectorAll(selector);
+			for (const n of found) {
+				n.style.visibility = 'hidden';
+				textEditor.hiddenNodes.push(n);
 			}
+		};
+
+		if (kind === 'shapeLabel') {
+			hideAll('[data-shape-label="1"]');
+			return;
+		}
+		if (kind === 'lineLabel') {
+			hideAll('[data-line-label="1"], [data-line-label-bg="1"]');
 			return;
 		}
 		node.style.visibility = 'hidden';
-		textEditor.hiddenNode = node;
+		textEditor.hiddenNodes.push(node);
 	}
 
 	function onTextEditorKeyDown(evt) {
@@ -1451,7 +1583,7 @@
 
 	function closeTextOverlayEditor(reason) {
 		if (!textEditor) return;
-		const { originalText, textarea, wrapper, hiddenNode, onCommit, focusHandle, fontSize } = textEditor;
+		const { originalText, textarea, wrapper, hiddenNodes, onCommit, focusHandle, fontSize } = textEditor;
 		const nextValue = textarea.value;
 		// Detach listeners and pending timers before removing the node so
 		// blur callbacks and the deferred focus call do not re-enter.
@@ -1464,7 +1596,7 @@
 		// wrapper - remove the textarea directly.
 		const toRemove = wrapper || textarea;
 		if (toRemove && toRemove.parentNode) toRemove.parentNode.removeChild(toRemove);
-		if (hiddenNode) hiddenNode.style.visibility = '';
+		for (const n of (hiddenNodes || [])) n.style.visibility = '';
 		textEditor = null;
 
 		if (reason === 'commit' && nextValue !== originalText && onCommit) {
@@ -1479,6 +1611,23 @@
 		const changed = mapElement(elementId, (e) => {
 			if (e.type !== 'text') return e;
 			return Object.assign({}, e, { text: nextText });
+		});
+		if (!changed) return;
+		markDirty();
+		render();
+	}
+
+	/**
+	 * Writes a new label.text into a line/arrow element. Mirrors
+	 * updateShapeLabelText but uses the line-label default schema.
+	 */
+	function updateLineLabelText(elementId, nextText) {
+		const changed = mapElement(elementId, (e) => {
+			if (e.type !== 'arrow' && e.type !== 'line') return e;
+			const prev = e.label || DEFAULT_LINE_LABEL;
+			if ((prev.text || '') === (nextText || '')) return e;
+			const nextLabel = Object.assign({}, DEFAULT_LINE_LABEL, prev, { text: nextText || '' });
+			return Object.assign({}, e, { label: nextLabel });
 		});
 		if (!changed) return;
 		markDirty();
@@ -1604,10 +1753,21 @@
 		const zoomReset = $('btn-zoom-reset');
 		if (zoomReset) zoomReset.addEventListener('click', () => setZoom(1));
 
+		// preventDefault на mousedown удерживает фокус в textarea label-оверлея:
+		// без этого клик по A-/A+ снимает фокус → срабатывает blur →
+		// editor закрывается, контролы исчезают. С preventDefault клик
+		// всё равно проходит, а textarea остаётся активным.
+		const keepEditorFocus = (evt) => evt.preventDefault();
 		const fontSmaller = $('btn-font-smaller');
-		if (fontSmaller) fontSmaller.addEventListener('click', () => adjustTextFontSize(-TEXT_FONT_SIZE_STEP));
+		if (fontSmaller) {
+			fontSmaller.addEventListener('mousedown', keepEditorFocus);
+			fontSmaller.addEventListener('click', () => adjustTextFontSize(-TEXT_FONT_SIZE_STEP));
+		}
 		const fontLarger = $('btn-font-larger');
-		if (fontLarger) fontLarger.addEventListener('click', () => adjustTextFontSize(+TEXT_FONT_SIZE_STEP));
+		if (fontLarger) {
+			fontLarger.addEventListener('mousedown', keepEditorFocus);
+			fontLarger.addEventListener('click', () => adjustTextFontSize(+TEXT_FONT_SIZE_STEP));
+		}
 	}
 
 	function bindCanvasEvents() {

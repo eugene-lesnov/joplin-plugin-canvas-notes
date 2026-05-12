@@ -114,7 +114,9 @@ export function serializeCanvasToSvg(doc: CanvasDocument): string {
 		`<rect x="${num(view.x)}" y="${num(view.y)}" width="${num(view.w)}" height="${num(view.h)}"` +
 		` fill="${safeText(doc.background)}"/>`;
 
-	const body = sortedElements.map(renderElement).join('');
+	const body = sortedElements
+		.map((e) => renderElement(e, { canvasBackground: doc.background }))
+		.join('');
 
 	return (
 		`<?xml version="1.0" encoding="UTF-8"?>` +

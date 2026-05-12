@@ -47,6 +47,8 @@ const SUPPORTED_ARROW_KINDS: ReadonlySet<string> = new Set<string>([
 
 const SUPPORTED_LABEL_ALIGNS: ReadonlySet<string> = new Set<string>(['left', 'center', 'right']);
 const SUPPORTED_LABEL_VALIGNS: ReadonlySet<string> = new Set<string>(['top', 'middle', 'bottom']);
+const SUPPORTED_LINE_LABEL_POSITIONS: ReadonlySet<string> = new Set<string>(['center']);
+const SUPPORTED_LINE_LABEL_ORIENTATIONS: ReadonlySet<string> = new Set<string>(['parallel', 'horizontal']);
 
 function isObject(v: unknown): v is Record<string, unknown> {
 	return typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -93,6 +95,26 @@ function validateShapeLabel(e: Record<string, unknown>): void {
 	}
 	if (!isString(l.verticalAlign) || !SUPPORTED_LABEL_VALIGNS.has(l.verticalAlign)) {
 		throw new Error('label.verticalAlign must be top|middle|bottom');
+	}
+}
+
+/**
+ * Validates the optional embedded label on a line / arrow.
+ * Same shape as the shape-label validator but with line-specific
+ * positioning (no align / verticalAlign, only `position`).
+ */
+function validateLineLabel(e: Record<string, unknown>): void {
+	if (e.label === undefined) return;
+	if (!isObject(e.label)) throw new Error('label must be an object');
+	const l = e.label;
+	if (!isString(l.text)) throw new Error('label.text must be string');
+	if (!isFiniteNumber(l.fontSize) || l.fontSize <= 0) throw new Error('label.fontSize must be a positive number');
+	if (!isString(l.color)) throw new Error('label.color must be string');
+	if (!isString(l.position) || !SUPPORTED_LINE_LABEL_POSITIONS.has(l.position)) {
+		throw new Error('label.position must be center');
+	}
+	if (!isString(l.orientation) || !SUPPORTED_LINE_LABEL_ORIENTATIONS.has(l.orientation)) {
+		throw new Error('label.orientation must be parallel|horizontal');
 	}
 }
 
@@ -152,6 +174,7 @@ function validateElement(raw: unknown): asserts raw is CanvasElement {
 			if (raw.endArrow !== undefined && !SUPPORTED_ARROW_KINDS.has(String(raw.endArrow))) {
 				throw new Error(`${kind}.endArrow must be none|arrow`);
 			}
+			validateLineLabel(raw);
 			break;
 		}
 		case 'freehand': {

@@ -46,6 +46,18 @@ import {
 } from './textWrap';
 import { formatNumber as num, safeText } from './xmlEscape';
 
+/**
+ * Per-render context shared between dispatchers and individual element
+ * renderers. Currently used for line labels that need the canvas
+ * background color for their backdrop, but kept open for future
+ * cross-cutting concerns (theme tokens, render-time flags, etc.).
+ */
+export interface RenderContext {
+	canvasBackground: string;
+}
+
+const DEFAULT_RENDER_CONTEXT: RenderContext = { canvasBackground: '#ffffff' };
+
 const PREVIEW_LINE_HEIGHT = 14;
 const PREVIEW_CHAR_WIDTH = 6;
 const PREVIEW_MIN_CHARS = 8;
@@ -256,7 +268,7 @@ function markerIdFor(kind: 'none' | 'arrow' | 'triangle' | 'diamond-open' | 'dia
  * type discriminator, so a single function covers solid/dashed/dotted
  * and one-way / bidirectional / UML-style variants.
  */
-function renderLineLike(e: ArrowElement | LineElement): string {
+function renderLineLike(e: ArrowElement | LineElement, ctx: RenderContext): string {
 	const startArrow = e.startArrow ?? 'none';
 	const endArrow = e.endArrow ?? (e.type === 'arrow' ? 'arrow' : 'none');
 	const strokeStyle = e.strokeStyle ?? 'solid';
@@ -271,11 +283,159 @@ function renderLineLike(e: ArrowElement | LineElement): string {
 	// into a single dash; use default (butt) caps for dashed/dotted.
 	const linecap = strokeStyle === 'solid' ? ' stroke-linecap="round"' : '';
 
-	return (
+	const lineFragment =
 		`<line x1="${num(e.from.x)}" y1="${num(e.from.y)}" x2="${num(e.to.x)}" y2="${num(e.to.y)}"` +
 		` stroke="${safeText(e.stroke)}" stroke-width="${num(e.strokeWidth)}"` +
-		`${linecap}${dashAttr}${markerStart}${markerEnd}/>`
+		`${linecap}${dashAttr}${markerStart}${markerEnd}/>`;
+
+	const labelFragment = renderLineLabel(e, ctx);
+	if (!labelFragment) return lineFragment;
+	return `<g>${lineFragment}${labelFragment}</g>`;
+}
+
+/** Horizontal/vertical padding around line label text, in document units. */
+const LINE_LABEL_PAD_X = 4;
+const LINE_LABEL_PAD_Y = 2;
+
+/**
+ * Space (in document units) reserved at each end of the line so the
+ * label text never overlaps the arrowhead. Scales with strokeWidth to
+ * handle thick lines.
+ */
+function lineLabelEndPad(strokeWidth: number): number {
+	return Math.max(20, strokeWidth * 4);
+}
+
+/**
+ * Renders the embedded line label. Returns an empty string when there
+ * is nothing to draw.
+ *
+ * Two orientation modes:
+ *  - 'parallel':   text rotates to follow the line, sits above it,
+ *                  word-wrapped by the available segment length so
+ *                  long captions break into multiple lines instead of
+ *                  overflowing the endpoints.
+ *  - 'horizontal': legacy mode, text stays horizontal with a backdrop
+ *                  rect over the midpoint.
+ */
+function renderLineLabel(e: ArrowElement | LineElement, ctx: RenderContext): string {
+	const label = e.label;
+	if (!label || !label.text) return '';
+
+	const cx = (e.from.x + e.to.x) / 2;
+	const cy = (e.from.y + e.to.y) / 2;
+	const orientation = label.orientation ?? 'parallel';
+
+	if (orientation === 'parallel') {
+		return renderParallelLineLabel(e, cx, cy, label);
+	}
+	return renderHorizontalLineLabel(cx, cy, label, ctx);
+}
+
+/**
+ * Parallel orientation: text follows the line direction, above the
+ * stroke, word-wrapped by the segment length.
+ */
+function renderParallelLineLabel(
+	e: ArrowElement | LineElement,
+	cx: number, cy: number,
+	label: NonNullable<(ArrowElement | LineElement)['label']>,
+): string {
+	const dx = e.to.x - e.from.x;
+	const dy = e.to.y - e.from.y;
+	const length = Math.hypot(dx, dy);
+	// Degenerate (zero-length) segment: nothing meaningful to label.
+	if (length < 1) return '';
+
+	// Upright flip: clamp angle to [-90, 90] so text is never upside down.
+	let angleDeg = Math.atan2(dy, dx) * 180 / Math.PI;
+	if (angleDeg > 90) angleDeg -= 180;
+	else if (angleDeg < -90) angleDeg += 180;
+
+	const fontSize = label.fontSize;
+	const lineHeight = fontSize * TEXT_LINE_HEIGHT_RATIO;
+
+	// Word-wrap by available width along the segment, reserving space for
+	// arrowheads on both ends. The same wrapByWidth/charsPerWidth helpers
+	// the shape labels and TextElement use, so behavior is consistent.
+	const endPad = lineLabelEndPad(e.strokeWidth);
+	const availableWidth = Math.max(1, length - endPad * 2);
+	const maxChars = charsPerWidth(availableWidth, fontSize);
+	const lines = wrapByWidth(label.text, maxChars);
+	if (lines.length === 0) return '';
+
+	const totalHeight = lines.length * lineHeight;
+	// Gap between the line and the bottom of the text block. Scales with
+	// strokeWidth so the text does not touch thick strokes.
+	const gap = Math.max(fontSize * 0.3, e.strokeWidth + 2);
+	// First baseline so the WHOLE block sits above the line in the local
+	// (translated+rotated) coordinate system: bottom edge of the block at
+	// y = -gap, top edge at y = -gap - totalHeight, first baseline at
+	// y = -gap - totalHeight + fontSize.
+	const firstBaselineY = -gap - totalHeight + fontSize;
+
+	const spans = lines
+		.map((line, idx) => {
+			const dyAttr = idx === 0 ? '' : ` dy="${num(lineHeight)}"`;
+			const content = line.length === 0 ? '\u200b' : safeText(line);
+			return `<tspan x="0"${dyAttr} xml:space="preserve">${content}</tspan>`;
+		})
+		.join('');
+
+	const text =
+		`<text x="0" y="${num(firstBaselineY)}"` +
+		` font-size="${num(fontSize)}" font-family="sans-serif"` +
+		` fill="${safeText(label.color)}" text-anchor="middle"` +
+		` pointer-events="none">${spans}</text>`;
+
+	return (
+		`<g transform="translate(${num(cx)} ${num(cy)}) rotate(${num(angleDeg)})"` +
+		` pointer-events="none">${text}</g>`
 	);
+}
+
+/**
+ * Legacy horizontal orientation: text + backdrop centered on midpoint,
+ * no rotation, no length-based wrap. Kept for users who explicitly
+ * choose 'horizontal' in the model.
+ */
+function renderHorizontalLineLabel(
+	cx: number, cy: number,
+	label: NonNullable<(ArrowElement | LineElement)['label']>,
+	ctx: RenderContext,
+): string {
+	const lines = label.text.split('\n');
+	const longest = lines.reduce((m, l) => (l.length > m ? l.length : m), 0);
+	const fontSize = label.fontSize;
+	const textWidth = Math.max(1, Math.ceil(longest * fontSize * 0.6));
+	const lineHeight = fontSize * TEXT_LINE_HEIGHT_RATIO;
+	const textHeight = Math.ceil(lines.length * lineHeight);
+
+	const rectW = textWidth + LINE_LABEL_PAD_X * 2;
+	const rectH = textHeight + LINE_LABEL_PAD_Y * 2;
+	const rectX = cx - rectW / 2;
+	const rectY = cy - rectH / 2;
+
+	const backdrop =
+		`<rect x="${num(rectX)}" y="${num(rectY)}" width="${num(rectW)}" height="${num(rectH)}"` +
+		` fill="${safeText(ctx.canvasBackground)}" stroke="none" pointer-events="none"/>`;
+
+	const firstBaselineY = cy - textHeight / 2 + fontSize;
+	const spans = lines
+		.map((line, idx) => {
+			const dy = idx === 0 ? '' : ` dy="${num(lineHeight)}"`;
+			const content = line.length === 0 ? '\u200b' : safeText(line);
+			return `<tspan x="${num(cx)}"${dy} xml:space="preserve">${content}</tspan>`;
+		})
+		.join('');
+
+	const text =
+		`<text x="${num(cx)}" y="${num(firstBaselineY)}"` +
+		` font-size="${num(fontSize)}" font-family="sans-serif"` +
+		` fill="${safeText(label.color)}" text-anchor="middle"` +
+		` pointer-events="none">${spans}</text>`;
+
+	return backdrop + text;
 }
 
 function renderFreehand(e: FreehandElement): string {
@@ -403,15 +563,15 @@ function renderText(e: TextElement): string {
 }
 
 /** Dispatcher: returns the SVG fragment for any supported element. */
-export function renderElement(e: CanvasElement): string {
+export function renderElement(e: CanvasElement, ctx: RenderContext = DEFAULT_RENDER_CONTEXT): string {
 	switch (e.type) {
 		case 'rectangle': return withLabel(renderRectangle(e), e);
 		case 'square':    return withLabel(renderSquare(e), e);
 		case 'circle':    return withLabel(renderCircle(e), e);
 		case 'ellipse':   return withLabel(renderEllipse(e), e);
 		case 'shape':     return withLabel(renderShape(e), e);
-		case 'arrow':     return renderLineLike(e);
-		case 'line':      return renderLineLike(e);
+		case 'arrow':     return renderLineLike(e, ctx);
+		case 'line':      return renderLineLike(e, ctx);
 		case 'freehand':  return renderFreehand(e);
 		case 'noteCard':  return renderNoteCard(e);
 		case 'todoCard':  return renderTodoCard(e);

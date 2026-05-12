@@ -76,10 +76,78 @@
 		return Math.max(STROKE_HIT_MIN_RADIUS, half + STROKE_HIT_PAD);
 	}
 
+	/**
+	 * Estimates the on-screen bounding box of a line-label rectangle in
+	 * local (line-aligned) coordinates: width by text length and font,
+	 * height by line count. Returns null if there is no visible label.
+	 * Local coords mean: origin = midpoint, x along the line, y across.
+	 */
+	function lineLabelLocalBox(e) {
+		const label = e && e.label;
+		if (!label || !label.text) return null;
+		const fontSize = label.fontSize || 14;
+		const lines = String(label.text).split('\n');
+		let longest = 0;
+		for (const l of lines) if (l.length > longest) longest = l.length;
+		// Same heuristics as the renderer (AVG_CHAR_WIDTH_RATIO = 0.6,
+		// TEXT_LINE_HEIGHT_RATIO = 1.2). Add a generous hit-tolerance pad
+		// so the user does not have to land exactly on the glyphs.
+		const pad = 6;
+		const width = Math.max(1, longest * fontSize * 0.6) + pad * 2;
+		const height = Math.max(1, lines.length * fontSize * 1.2) + pad * 2;
+		return { width, height };
+	}
+
+	/**
+	 * Hit-test the embedded label of a line/arrow element. Handles both
+	 * orientations: 'parallel' (rotated around midpoint) and 'horizontal'.
+	 */
+	function hitTestLineLabel(e, px, py) {
+		const box = lineLabelLocalBox(e);
+		if (!box) return false;
+		const cx = (e.from.x + e.to.x) / 2;
+		const cy = (e.from.y + e.to.y) / 2;
+		const orientation = (e.label && e.label.orientation) || 'parallel';
+
+		if (orientation === 'horizontal') {
+			// Box centered on midpoint.
+			return Math.abs(px - cx) <= box.width / 2
+				&& Math.abs(py - cy) <= box.height / 2;
+		}
+
+		// Parallel: text is placed ABOVE the line in local coords (negative
+		// y direction). Inverse-rotate the test point into local space.
+		const dx = e.to.x - e.from.x;
+		const dy = e.to.y - e.from.y;
+		const len = Math.hypot(dx, dy);
+		if (len < 1) return false;
+		let angleDeg = Math.atan2(dy, dx) * 180 / Math.PI;
+		if (angleDeg > 90) angleDeg -= 180;
+		else if (angleDeg < -90) angleDeg += 180;
+		const angle = angleDeg * Math.PI / 180;
+		const cos = Math.cos(angle);
+		const sin = Math.sin(angle);
+		const lx = (px - cx) * cos + (py - cy) * sin;
+		const ly = -(px - cx) * sin + (py - cy) * cos;
+		const strokeWidth = e.strokeWidth || 1;
+		const fontSize = (e.label && e.label.fontSize) || 14;
+		const gap = Math.max(fontSize * 0.3, strokeWidth + 2);
+		// Label block sits in local y in [-(gap + height), -gap].
+		return Math.abs(lx) <= box.width / 2
+			&& ly <= -gap
+			&& ly >= -gap - box.height;
+	}
+
 	/** Hit-tests document-space point (px, py) against the element. */
 	function hitTest(e, px, py) {
 		if (e.type === 'arrow' || e.type === 'line') {
-			return distToSegment({ x: px, y: py }, e.from, e.to) <= strokeHitRadius(e.strokeWidth);
+			if (distToSegment({ x: px, y: py }, e.from, e.to) <= strokeHitRadius(e.strokeWidth)) {
+				return true;
+			}
+			// Click landed away from the stroke - also accept hits on the
+			// label so the user can grab the line by its caption (and so
+			// dbl-click on the label opens the label editor).
+			return hitTestLineLabel(e, px, py);
 		}
 		if (e.type === 'freehand') {
 			const r = strokeHitRadius(e.strokeWidth);
@@ -99,5 +167,6 @@
 		distToSegment,
 		strokeHitRadius,
 		hitTest,
+		hitTestLineLabel,
 	};
 })();
