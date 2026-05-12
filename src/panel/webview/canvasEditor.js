@@ -127,14 +127,16 @@
 	}
 
 	/**
-	 * Универсальная правка размера текста. Работает в трёх режимах:
-	 *   1. Выбран text-элемент - меняем его fontSize.
-	 *   2. Открыт оверлей-редактор - меняем размер у соответствующего
-	 *      элемента (если он уже в документе) и/или у черновика.
-	 *   3. Ничего из перечисленного - меняем только pendingTextFontSize,
-	 *      который применится к следующему создаваемому элементу.
-	 * Во всех случаях держим textarea, лейбл в тулбаре и состояние
-	 * кнопок A-/A+ в актуальном виде.
+	 * Правка размера текста. Работает в трёх режимах:
+	 *   1. Открыт shapeLabel / lineLabel overlay - меняем fontSize
+	 *      вложенного label в фигуре/линии.
+	 *   2. Открыт text overlay (элемент в документе или черновик) -
+	 *      меняем размер элемента и pendingTextFontSize.
+	 *   3. Активного overlay нет но выбран text-элемент (когда
+	 *      adjustTextFontSize вызван программно) - меняем его fontSize.
+	 * Кнопки A-/A+ живут в плавающем popover рядом с editor;
+	 * поэтому путь без overlay пользовательски недостижим, но
+	 * поддерживается для внутренних вызовов.
 	 */
 	function adjustTextFontSize(delta) {
 		const next = clampFontSize(currentTextFontSize() + delta);
@@ -151,7 +153,8 @@
 			// контенту; при смене fontSize это вызываем явно,
 			// поскольку высота изменилась, а input-событие не случилось.
 			autoResizeShapeLabelTextarea();
-			updateTextControls();
+			refreshFontSizePopover();
+			repositionFontSizePopover();
 			return;
 		}
 
@@ -183,7 +186,8 @@
 			syncTextEditorFontSize(textEditor.elementId, next);
 		}
 
-		updateTextControls();
+		refreshFontSizePopover();
+		repositionFontSizePopover();
 	}
 
 	/**
@@ -287,28 +291,100 @@
 		const zoomOut = $('btn-zoom-out');
 		if (zoomOut) zoomOut.disabled = zoom <= C.ZOOM_MIN + 1e-6;
 
-		updateTextControls();
 		updateEmptyState();
 	}
 
-	function updateTextControls() {
-		const group = $('text-controls');
-		if (!group) return;
-		// Контролы видны если есть с чем работать: выбранный текст,
-		// любой активный оверлей-редактор (text / shape label /
-		// line label) или просто включенный инструмент Text.
-		const visible = !!getSelectedTextElement()
-			|| !!textEditor
-			|| activeTool === 'text';
-		group.hidden = !visible;
-		if (!visible) return;
-		const value = currentTextFontSize();
-		const valueLabel = $('font-size-value');
-		if (valueLabel) valueLabel.textContent = String(value);
-		const smaller = $('btn-font-smaller');
-		if (smaller) smaller.disabled = value <= TEXT_FONT_SIZE_MIN;
-		const larger = $('btn-font-larger');
-		if (larger) larger.disabled = value >= TEXT_FONT_SIZE_MAX;
+	/**
+	 * Floating font-size popover attached to the active textarea overlay.
+	 * Replaces the old toolbar text-controls: A-/A+ and the current size
+	 * float right next to the editor so the control is contextual and
+	 * does not clutter the toolbar.
+	 */
+	let fontSizePopover = null;
+
+	function openFontSizePopover() {
+		closeFontSizePopover();
+		if (!textEditor) return;
+
+		const host = document.createElement('div');
+		host.className = 'font-size-popover';
+		host.setAttribute('role', 'group');
+		host.setAttribute('aria-label', t('textControlsLabel', 'Text size'));
+
+		const smaller = document.createElement('button');
+		smaller.type = 'button';
+		smaller.className = 'tool-btn';
+		smaller.textContent = 'A-';
+		smaller.title = t('btnFontSmaller', 'Smaller text');
+
+		const value = document.createElement('span');
+		value.className = 'font-size-value';
+		value.setAttribute('aria-live', 'polite');
+
+		const larger = document.createElement('button');
+		larger.type = 'button';
+		larger.className = 'tool-btn';
+		larger.textContent = 'A+';
+		larger.title = t('btnFontLarger', 'Larger text');
+
+		// preventDefault на mousedown удерживает фокус в textarea, иначе
+		// blur при клике по кнопке закрывает editor и popover исчезает.
+		const keepFocus = (evt) => evt.preventDefault();
+		smaller.addEventListener('mousedown', keepFocus);
+		smaller.addEventListener('click', () => adjustTextFontSize(-TEXT_FONT_SIZE_STEP));
+		larger.addEventListener('mousedown', keepFocus);
+		larger.addEventListener('click', () => adjustTextFontSize(+TEXT_FONT_SIZE_STEP));
+
+		host.appendChild(smaller);
+		host.appendChild(value);
+		host.appendChild(larger);
+		document.body.appendChild(host);
+
+		fontSizePopover = { host, smaller, larger, value };
+		refreshFontSizePopover();
+		repositionFontSizePopover();
+	}
+
+	function closeFontSizePopover() {
+		if (!fontSizePopover) return;
+		if (fontSizePopover.host.parentNode) {
+			fontSizePopover.host.parentNode.removeChild(fontSizePopover.host);
+		}
+		fontSizePopover = null;
+	}
+
+	/** Updates the displayed size + button enablement. */
+	function refreshFontSizePopover() {
+		if (!fontSizePopover) return;
+		const v = currentTextFontSize();
+		fontSizePopover.value.textContent = String(v);
+		fontSizePopover.smaller.disabled = v <= TEXT_FONT_SIZE_MIN;
+		fontSizePopover.larger.disabled = v >= TEXT_FONT_SIZE_MAX;
+	}
+
+	/**
+	 * Anchors the popover to the active editor: centered horizontally on
+	 * the editor, placed above it if there is room, otherwise below.
+	 * Re-runs after every autoresize and on window resize/scroll so the
+	 * popover follows the editor faithfully.
+	 */
+	function repositionFontSizePopover() {
+		if (!fontSizePopover || !textEditor) return;
+		const anchor = textEditor.wrapper || textEditor.textarea;
+		if (!anchor) return;
+		const host = fontSizePopover.host;
+		const rect = anchor.getBoundingClientRect();
+		const hostRect = host.getBoundingClientRect();
+		const gap = 6;
+		let top = rect.top - hostRect.height - gap;
+		if (top < gap) top = rect.bottom + gap;
+		let left = rect.left + (rect.width - hostRect.width) / 2;
+		// Кламп по вьюпорту, чтобы popover не уехал за края в крайних случаях.
+		const vw = window.innerWidth;
+		if (left < gap) left = gap;
+		else if (left + hostRect.width > vw - gap) left = vw - hostRect.width - gap;
+		host.style.left = `${left}px`;
+		host.style.top = `${top}px`;
 	}
 
 	function updateEmptyState() {
@@ -396,6 +472,7 @@
 		if (textEditor) {
 			textEditor.hiddenNodes = [];
 			hideEditedTextNode(textEditor.elementId, textEditor.kind);
+			repositionFontSizePopover();
 		}
 	}
 
@@ -476,7 +553,6 @@
 			selectedId = null;
 			refreshSelection();
 		}
-		updateTextControls();
 	}
 
 	function updateHoverCursor(p) {
@@ -1444,11 +1520,13 @@
 		// 1px solid #4a90e2 обозначает активную область редактирования.
 		let wrapper = null;
 		const useWrapper = view.kind === 'shapeLabel' || view.kind === 'lineLabel';
+		const wrapperCenterClientY = tlClient.y + heightPx / 2;
 		if (useWrapper) {
 			// Shape and line labels are centered inside their reference box.
 			// A flexbox wrapper handles vertical alignment; the textarea
-			// auto-grows in height based on its content so the text block
-			// stays optically centered while typing.
+			// auto-grows in height based on its content. The wrapper grows
+			// symmetrically around the original center so the editable block
+			// stays anchored to the label's anchor point while typing.
 			wrapper = document.createElement('div');
 			wrapper.setAttribute('style',
 				'position:fixed;' +
@@ -1458,10 +1536,10 @@
 				`align-items:${flexAlignFor(view.verticalAlign)};` +
 				'background:transparent;' +
 				'border:1px solid #4a90e2;border-radius:2px;' +
-				'box-sizing:border-box;overflow:hidden;z-index:9998;');
+				'box-sizing:border-box;overflow:visible;z-index:9998;');
 
 			ta.setAttribute('style',
-				'width:100%;max-height:100%;' +
+				'width:100%;' +
 				`font-size:${view.fontSize * pixelScale}px;` +
 				'font-family:sans-serif;line-height:1.2;' +
 				`text-align:${view.textAlign};` +
@@ -1498,20 +1576,27 @@
 			hiddenNodes: [],
 			onCommit: typeof onCommit === 'function' ? onCommit : null,
 			focusHandle: null,
-			maxHeightPx: heightPx,
+			initialHeightPx: heightPx,
+			centerClientY: wrapperCenterClientY,
 		};
 
 		hideEditedTextNode(view.elementId, view.kind);
-		updateTextControls();
+		openFontSizePopover();
 
 		ta.addEventListener('keydown', onTextEditorKeyDown);
 		ta.addEventListener('blur', onTextEditorBlur);
 
 		// Auto-grow the label textarea so the centered text block expands
 		// downward as the user types and stays vertically centered.
+		// repositionFontSizePopover keeps the floating size control glued
+		// to the editor as it grows / shrinks.
 		if (useWrapper) {
-			ta.addEventListener('input', autoResizeShapeLabelTextarea);
+			ta.addEventListener('input', () => {
+				autoResizeShapeLabelTextarea();
+				repositionFontSizePopover();
+			});
 			autoResizeShapeLabelTextarea();
+			repositionFontSizePopover();
 		}
 
 		focusHandle = setTimeout(() => {
@@ -1527,16 +1612,31 @@
 	}
 
 	/**
-	 * Resizes the shape-label textarea to fit its content (clamped to the
-	 * shape's bbox). Called on init and on every input event.
+	 * Resizes the shape/line label editor to fit its content. The textarea
+	 * grows to its scrollHeight; the wrapper grows in lockstep, expanding
+	 * symmetrically around the original anchor point so the editable block
+	 * stays centered on the label's position while typing. No max cap: long
+	 * captions get a tall editor instead of clipping.
 	 */
 	function autoResizeShapeLabelTextarea() {
 		if (!textEditor) return;
 		if (textEditor.kind !== 'shapeLabel' && textEditor.kind !== 'lineLabel') return;
 		const ta = textEditor.textarea;
+		const wrapper = textEditor.wrapper;
+		if (!wrapper) return;
+
+		// Measure intrinsic content height of the textarea.
 		ta.style.height = 'auto';
-		const max = textEditor.maxHeightPx || ta.scrollHeight;
-		ta.style.height = `${Math.min(ta.scrollHeight, max)}px`;
+		const contentH = ta.scrollHeight;
+		// Wrapper height = max(initial bbox height, content height) so the
+		// editor never shrinks below the original anchor box, but grows
+		// freely for multi-line content.
+		const nextH = Math.max(textEditor.initialHeightPx || contentH, contentH);
+		ta.style.height = `${nextH}px`;
+		wrapper.style.height = `${nextH}px`;
+		// Re-anchor: keep the wrapper visually centered on its original
+		// midpoint so growth happens symmetrically (half up, half down).
+		wrapper.style.top = `${textEditor.centerClientY - nextH / 2}px`;
 	}
 
 	/**
@@ -1612,7 +1712,10 @@
 		if (focusHandle !== null) clearTimeout(focusHandle);
 		textarea.removeEventListener('keydown', onTextEditorKeyDown);
 		textarea.removeEventListener('blur', onTextEditorBlur);
-		textarea.removeEventListener('input', autoResizeShapeLabelTextarea);
+		// input-listener был привязан анонимной функцией; removeEventListener
+		// не нужен, т.к. сам textarea удаляется из DOM и GC заберёт связанные
+		// листенеры.
+		closeFontSizePopover();
 		// Shape-label editor uses a wrapper div; remove the wrapper (which
 		// also detaches the textarea). Plain TextElement editor has no
 		// wrapper - remove the textarea directly.
@@ -1626,7 +1729,6 @@
 		}
 		// Make sure the user is back in Select mode after editing.
 		if (activeTool !== 'select') setActiveTool('select');
-		updateTextControls();
 	}
 
 	function updateTextValue(elementId, nextText) {
@@ -1756,7 +1858,6 @@
 				selectedId = null;
 				refreshSelection();
 			}
-			updateTextControls();
 		});
 	}
 
@@ -1774,22 +1875,6 @@
 		if (zoomOut) zoomOut.addEventListener('click', () => setZoom(zoom / C.ZOOM_STEP));
 		const zoomReset = $('btn-zoom-reset');
 		if (zoomReset) zoomReset.addEventListener('click', () => setZoom(1));
-
-		// preventDefault на mousedown удерживает фокус в textarea label-оверлея:
-		// без этого клик по A-/A+ снимает фокус → срабатывает blur →
-		// editor закрывается, контролы исчезают. С preventDefault клик
-		// всё равно проходит, а textarea остаётся активным.
-		const keepEditorFocus = (evt) => evt.preventDefault();
-		const fontSmaller = $('btn-font-smaller');
-		if (fontSmaller) {
-			fontSmaller.addEventListener('mousedown', keepEditorFocus);
-			fontSmaller.addEventListener('click', () => adjustTextFontSize(-TEXT_FONT_SIZE_STEP));
-		}
-		const fontLarger = $('btn-font-larger');
-		if (fontLarger) {
-			fontLarger.addEventListener('mousedown', keepEditorFocus);
-			fontLarger.addEventListener('click', () => adjustTextFontSize(+TEXT_FONT_SIZE_STEP));
-		}
 	}
 
 	function bindCanvasEvents() {
@@ -1823,6 +1908,14 @@
 		document.addEventListener('keydown', onKeyDown);
 		document.addEventListener('keyup', onKeyUp);
 		window.addEventListener('blur', () => { spaceDown = false; });
+
+		// Floating font-size popover follows the active editor: keep it
+		// glued through window resize and stage scroll.
+		window.addEventListener('resize', repositionFontSizePopover);
+		const stageForScroll = $('canvas-stage');
+		if (stageForScroll) {
+			stageForScroll.addEventListener('scroll', repositionFontSizePopover);
+		}
 	}
 
 	function bindBackendChannel() {
