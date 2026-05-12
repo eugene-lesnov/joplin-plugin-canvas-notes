@@ -104,26 +104,35 @@
 	);
 	const ICON_LINE_DASHED = svg(`<path d="M2 13 L14 3" ${NF} ${ST} stroke-dasharray="3 2"/>`);
 	const ICON_LINE_DOTTED = svg(`<path d="M2 13 L14 3" ${NF} ${ST} stroke-dasharray="1 2.2"/>`);
+	// Dashed arrow icon mirrors the UML connector layout (horizontal
+	// stroke + arrowhead on the right) so the Dependency / Dashed arrow
+	// tiles line up visually with Inheritance / Aggregation / Composition.
 	const ICON_ARROW_DASHED = svg(
-		`<path d="M2 13 L12 3" ${NF} ${ST} stroke-dasharray="3 2"/>` +
-		`<path d="M12 3 L8 3 M12 3 L12 7" ${NF} ${ST}/>`,
+		`<path d="M2 8 L11 8" ${NF} ${ST} stroke-dasharray="2 2"/>` +
+		`<path d="M11 4 L14 8 L11 12" ${NF} ${ST}/>`,
 	);
-	// UML markers shown at the end of a short stroke
+	// UML connector icons.
+	//
+	// All four use the same horizontal layout: a short stroke on the left,
+	// the marker shape on the right with its tail touching the stroke.
+	// `stroke-linejoin="miter"` keeps the triangle / diamond corners sharp
+	// at 16x16 (the default "round" join from `ST` softens them into mush).
+	const UML_JOIN = 'stroke="currentColor" stroke-width="1.5" stroke-linejoin="miter"';
 	const ICON_INHERITANCE = svg(
-		`<path d="M2 11 L9 4" ${NF} ${ST}/>` +
-		`<polygon points="9,4 13,4 13,8" fill="#ffffff" ${ST}/>`,
+		`<path d="M2 8 L9 8" ${NF} ${ST}/>` +
+		`<polygon points="9,4 14,8 9,12" fill="#ffffff" ${UML_JOIN}/>`,
 	);
 	const ICON_REALIZATION = svg(
-		`<path d="M2 11 L9 4" ${NF} ${ST} stroke-dasharray="2 2"/>` +
-		`<polygon points="9,4 13,4 13,8" fill="#ffffff" ${ST}/>`,
+		`<path d="M2 8 L9 8" ${NF} ${ST} stroke-dasharray="2 2"/>` +
+		`<polygon points="9,4 14,8 9,12" fill="#ffffff" ${UML_JOIN}/>`,
 	);
 	const ICON_AGGREGATION = svg(
-		`<path d="M2 11 L8 8" ${NF} ${ST}/>` +
-		`<polygon points="8,8 11,6 14,8 11,10" fill="#ffffff" ${ST}/>`,
+		`<path d="M2 8 L7 8" ${NF} ${ST}/>` +
+		`<polygon points="7,8 10.5,5 14,8 10.5,11" fill="#ffffff" ${UML_JOIN}/>`,
 	);
 	const ICON_COMPOSITION = svg(
-		`<path d="M2 11 L8 8" ${NF} ${ST}/>` +
-		`<polygon points="8,8 11,6 14,8 11,10" fill="currentColor" ${ST}/>`,
+		`<path d="M2 8 L7 8" ${NF} ${ST}/>` +
+		`<polygon points="7,8 10.5,5 14,8 10.5,11" fill="currentColor" ${UML_JOIN}/>`,
 	);
 	const ICON_PEN = svg(
 		`<path d="M2 11.5 C3.2 7.2, 5.1 6.8, 6.4 9.2 S9.1 12.1, 10.1 8.6 S12.2 3.9, 14 5.2" ${NF} ${ST}/>`,
