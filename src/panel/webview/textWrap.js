@@ -125,12 +125,55 @@
 		return Math.ceil(count * lineHeight);
 	}
 
+	const SHAPE_LABEL_PADDING = 4;
+
+	/**
+	 * Computes positioning for a shape-embedded label. Mirror of
+	 * layoutShapeLabel in src/canvas/textWrap.ts so the in-app preview
+	 * matches the exported SVG line by line.
+	 */
+	function layoutShapeLabel(text, box, fontSize, align, verticalAlign) {
+		const innerW = Math.max(1, box.w - SHAPE_LABEL_PADDING * 2);
+		const maxChars = charsPerWidth(innerW, fontSize);
+		const lines = wrapByWidth(text, maxChars);
+		const safeLines = lines.length > 0 ? lines : [''];
+
+		const lineHeight = fontSize * TEXT_LINE_HEIGHT_RATIO;
+		const totalHeight = safeLines.length * lineHeight;
+
+		let textAnchor;
+		let x;
+		if (align === 'left') {
+			textAnchor = 'start';
+			x = box.x + SHAPE_LABEL_PADDING;
+		} else if (align === 'right') {
+			textAnchor = 'end';
+			x = box.x + box.w - SHAPE_LABEL_PADDING;
+		} else {
+			textAnchor = 'middle';
+			x = box.x + box.w / 2;
+		}
+
+		let firstBaselineY;
+		if (verticalAlign === 'top') {
+			firstBaselineY = box.y + SHAPE_LABEL_PADDING + fontSize;
+		} else if (verticalAlign === 'bottom') {
+			firstBaselineY = box.y + box.h - SHAPE_LABEL_PADDING - totalHeight + fontSize;
+		} else {
+			firstBaselineY = box.y + (box.h - totalHeight) / 2 + fontSize;
+		}
+
+		return { lines: safeLines, textAnchor, x, firstBaselineY };
+	}
+
 	window.CanvasNotes = window.CanvasNotes || {};
 	window.CanvasNotes.TextWrap = {
 		wrapText,
 		wrapByWidth,
 		charsPerWidth,
 		computeTextHeight,
+		layoutShapeLabel,
+		SHAPE_LABEL_PADDING,
 		TEXT_LINE_HEIGHT_RATIO,
 	};
 })();

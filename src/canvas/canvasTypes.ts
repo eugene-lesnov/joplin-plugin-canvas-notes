@@ -86,6 +86,49 @@ export interface ShapeStyle {
 	fill: string;
 }
 
+/**
+ * Horizontal text alignment inside the shape's label box.
+ */
+export type LabelAlign = 'left' | 'center' | 'right';
+
+/**
+ * Vertical text alignment inside the shape's label box.
+ */
+export type LabelVerticalAlign = 'top' | 'middle' | 'bottom';
+
+/**
+ * Embedded label attached to a shape (rectangle / ellipse / circle /
+ * square / unified shape). Plain text only, no markdown, no rich text.
+ *
+ * Storage model:
+ *  - the label is part of the shape element itself, not a separate
+ *    overlay element;
+ *  - all fields are required at runtime; old documents without a label
+ *    are normalized on load (see svgParser.normalizeShapeLabel).
+ *
+ * Rendering / editing UI lives in later stages; this contract is the
+ * data layer only.
+ */
+export interface ShapeLabel {
+	/** User-entered text. Empty string means the shape has no visible label. */
+	text: string;
+	/** Font size in document units. */
+	fontSize: number;
+	/** Plain hex color (e.g. '#222222'). Not theme-aware at the model level. */
+	color: string;
+	align: LabelAlign;
+	verticalAlign: LabelVerticalAlign;
+}
+
+/** Default label applied to shapes that do not carry one yet. */
+export const DEFAULT_SHAPE_LABEL: ShapeLabel = {
+	text: '',
+	fontSize: 14,
+	color: '#222222',
+	align: 'center',
+	verticalAlign: 'middle',
+};
+
 /** Rectangle defined by top-left corner + size. */
 export interface RectangleElement extends BaseElement, ShapeStyle {
 	type: 'rectangle';
@@ -95,6 +138,8 @@ export interface RectangleElement extends BaseElement, ShapeStyle {
 	h: number;
 	/** Optional corner radius. */
 	rx?: number;
+	/** Optional embedded label. Absent on old documents. */
+	label?: ShapeLabel;
 }
 
 /** Square is a constrained rectangle: width === height === size. */
@@ -104,6 +149,7 @@ export interface SquareElement extends BaseElement, ShapeStyle {
 	y: number;
 	size: number;
 	rx?: number;
+	label?: ShapeLabel;
 }
 
 /** Circle defined by center + radius. */
@@ -112,6 +158,7 @@ export interface CircleElement extends BaseElement, ShapeStyle {
 	cx: number;
 	cy: number;
 	r: number;
+	label?: ShapeLabel;
 }
 
 /** Ellipse defined by center + radii. */
@@ -121,6 +168,7 @@ export interface EllipseElement extends BaseElement, ShapeStyle {
 	cy: number;
 	rx: number;
 	ry: number;
+	label?: ShapeLabel;
 }
 
 /**
@@ -136,6 +184,8 @@ export interface ShapeElement extends BaseElement, ShapeStyle {
 	y: number;
 	w: number;
 	h: number;
+	/** Optional embedded label. Absent on old documents. */
+	label?: ShapeLabel;
 }
 
 /**

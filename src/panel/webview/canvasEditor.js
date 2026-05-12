@@ -259,10 +259,12 @@
 		const group = $('text-controls');
 		if (!group) return;
 		// Контролы видны если есть с чем работать: выбранный текст,
-		// активный оверлей-редактор или просто включенный инструмент Text
-		// (тогда A-/A+ меняют pendingTextFontSize для следующего элемента).
+		// активный оверлей-редактор для TextElement или просто включенный
+		// инструмент Text. Для редактирования shape label контролы скрыты
+		// в этой итерации - размер label правится напрямую в модели.
+		const editingText = !!textEditor && textEditor.kind === 'text';
 		const visible = !!getSelectedTextElement()
-			|| !!textEditor
+			|| editingText
 			|| activeTool === 'text';
 		group.hidden = !visible;
 		if (!visible) return;
@@ -485,15 +487,15 @@
 
 	function onPointerDown(evt) {
 		if (!doc) return;
-		// While the text overlay editor is active, canvas-level pointer
-		// interactions are disabled. Clicking inside the textarea is handled
-		// by the input itself; clicking outside should commit the editor
-		// without simultaneously starting selection / move / drawing in the
-		// same event cycle. preventDefault stops the canvas from grabbing
-		// focus or starting a drag; the textarea's blur listener takes care
-		// of the actual commit.
+		// While the text overlay editor is active, clicking on the canvas
+		// commits the current edit explicitly. We cannot rely on the
+		// textarea's blur event because preventDefault'ing the canvas
+		// pointerdown to suppress drag-start would also suppress focus
+		// transfer - blur never fires and the user's typed text is lost.
+		// Single-click on the canvas = commit + dismiss; subsequent
+		// selection/move/drawing requires a new click.
 		if (textEditor) {
-			evt.preventDefault();
+			closeTextOverlayEditor('commit');
 			return;
 		}
 
@@ -1138,6 +1140,11 @@
 			return;
 		}
 
+		if (LABELED_SHAPE_TYPES.has(hit.type)) {
+			editShapeLabel(hit);
+			return;
+		}
+
 		if (hit.type !== 'noteCard' && hit.type !== 'todoCard') return;
 		// Persist the current canvas state before navigating away.
 		if (isDirty()) {
@@ -1152,29 +1159,118 @@
 	}
 
 	/**
+	 * Element types whose embedded label can be edited via double-click.
+	 * Matches the set of labelable shapes in the model.
+	 */
+	const LABELED_SHAPE_TYPES = new Set([
+		'rectangle', 'square', 'circle', 'ellipse', 'shape',
+	]);
+
+	const DEFAULT_SHAPE_LABEL = {
+		text: '',
+		fontSize: 14,
+		color: '#222222',
+		align: 'center',
+		verticalAlign: 'middle',
+	};
+
+	/**
+	 * Bounding box used for label positioning. Mirrors labelBoxFor() on the
+	 * renderer and serializer sides; negative-sized rectangles/shapes are
+	 * normalized so the overlay lands on the visible quadrant.
+	 */
+	function shapeLabelBox(e) {
+		if (e.type === 'rectangle' || e.type === 'shape') {
+			const x = e.w >= 0 ? e.x : e.x + e.w;
+			const y = e.h >= 0 ? e.y : e.y + e.h;
+			return { x, y, w: Math.abs(e.w), h: Math.abs(e.h) };
+		}
+		if (e.type === 'square') return { x: e.x, y: e.y, w: e.size, h: e.size };
+		if (e.type === 'circle') return { x: e.cx - e.r, y: e.cy - e.r, w: e.r * 2, h: e.r * 2 };
+		if (e.type === 'ellipse') return { x: e.cx - e.rx, y: e.cy - e.ry, w: e.rx * 2, h: e.ry * 2 };
+		return null;
+	}
+
+	/**
 	 * Opens the inline prompt with current text pre-filled. Updates the
 	 * element on confirm; empty input and cancel are both no-ops, so the
 	 * element can never silently disappear. Use Delete to remove it.
 	 */
 	function editTextElement(target) {
-		openTextOverlayEditor(target, (nextText) => {
+		const view = {
+			kind: 'text',
+			elementId: target.id,
+			box: { x: target.x, y: target.y, w: target.width, h: target.height },
+			originalText: target.text || '',
+			fontSize: target.fontSize || TEXT_DEFAULT_FONT_SIZE,
+			color: '#222',
+			background: 'rgba(255,255,255,0.96)',
+			textAlign: 'left',
+		};
+		openTextOverlayEditor(view, (nextText) => {
 			if (nextText === target.text) return;
 			updateTextValue(target.id, nextText);
 		});
 	}
 
 	/**
-	 * Opens an HTML <textarea> positioned over the element's bounding box,
-	 * mapped through the SVG's screen CTM so zoom / scroll / viewBox are
-	 * respected. The original SVG <text> node is hidden while editing so
-	 * the user does not see two overlapping copies. Closes the editor on
-	 * blur (save), Ctrl/Cmd+Enter (save) and Escape (cancel).
-	 *
-	 * `onCommit(nextText)` is invoked when the user keeps changes. The
-	 * caller decides what to do with the value (update an existing element
-	 * or insert a new one). Cancel and unchanged commits skip the callback.
+	 * Opens the textarea overlay anchored to the bounds of a shape so the
+	 * user can edit its embedded label. The shape itself stays visible -
+	 * only the rendered <text> label is hidden for the duration of the
+	 * edit so two copies of the text do not overlap.
 	 */
-	function openTextOverlayEditor(target, onCommit) {
+	function editShapeLabel(target) {
+		const box = shapeLabelBox(target);
+		if (!box) return;
+		const label = target.label || DEFAULT_SHAPE_LABEL;
+		const view = {
+			kind: 'shapeLabel',
+			elementId: target.id,
+			box: { x: box.x, y: box.y, w: box.w, h: box.h },
+			originalText: label.text || '',
+			fontSize: label.fontSize || DEFAULT_SHAPE_LABEL.fontSize,
+			color: label.color || DEFAULT_SHAPE_LABEL.color,
+			// Translucent backdrop keeps the shape visually present under the
+			// textarea but ensures the text being typed stays legible.
+			background: 'rgba(255,255,255,0.85)',
+			textAlign: label.align === 'left' ? 'left'
+				: (label.align === 'right' ? 'right' : 'center'),
+			verticalAlign: label.verticalAlign || DEFAULT_SHAPE_LABEL.verticalAlign,
+		};
+		openTextOverlayEditor(view, (nextText) => {
+			const nextLabelText = nextText || '';
+			if (nextLabelText === (label.text || '')) return;
+			updateShapeLabelText(target.id, nextLabelText);
+		});
+	}
+
+	/**
+	 * Opens an HTML <textarea> positioned over a document-space box,
+	 * mapped through the SVG's screen CTM so zoom / scroll / viewBox are
+	 * respected. Closes on blur (commit), Ctrl/Cmd+Enter (commit) and
+	 * Escape (cancel).
+	 *
+	 * `view` describes WHAT to edit:
+	 *   - kind:           'text' | 'shapeLabel'
+	 *   - elementId:      id of the SVG node to hide while editing
+	 *   - box:            { x, y, w, h } in document space
+	 *   - originalText:   pre-filled value, used to detect changes
+	 *   - fontSize:       font size in document units
+	 *   - color:          textarea text color (hex/rgba)
+	 *   - background:     textarea background (hex/rgba)
+	 *   - textAlign:      'left' | 'center' | 'right'
+	 *
+	 * `onCommit(nextText, { fontSize })` is invoked only when the user
+	 * keeps changes. Cancel and unchanged commits skip the callback.
+	 */
+	/** Maps a vertical-align name onto a flexbox align-items value. */
+	function flexAlignFor(vAlign) {
+		if (vAlign === 'top') return 'flex-start';
+		if (vAlign === 'bottom') return 'flex-end';
+		return 'center';
+	}
+
+	function openTextOverlayEditor(view, onCommit) {
 		if (textEditor) closeTextOverlayEditor('cancel');
 
 		const node = svg();
@@ -1184,15 +1280,15 @@
 
 		let focusHandle = null;
 
-		// Map (x, y) and (x+width, y+height) document points to client space
-		// via the SVG screen CTM. Using two points is more robust than
-		// trusting ctm.a/d for non-uniform transforms.
+		// Map (x, y) and (x+w, y+h) document points to client space via the
+		// SVG screen CTM. Using two points is more robust than trusting
+		// ctm.a / ctm.d for non-uniform transforms.
 		const topLeft = node.createSVGPoint();
-		topLeft.x = target.x;
-		topLeft.y = target.y;
+		topLeft.x = view.box.x;
+		topLeft.y = view.box.y;
 		const br = node.createSVGPoint();
-		br.x = target.x + target.width;
-		br.y = target.y + target.height;
+		br.x = view.box.x + view.box.w;
+		br.y = view.box.y + view.box.h;
 		const tlClient = topLeft.matrixTransform(ctm);
 		const brClient = br.matrixTransform(ctm);
 
@@ -1203,37 +1299,80 @@
 		const pixelScale = ctm.a || 1;
 
 		const ta = document.createElement('textarea');
-		ta.value = target.text || '';
+		ta.value = view.originalText || '';
 		ta.setAttribute('spellcheck', 'false');
 		ta.setAttribute('wrap', 'soft');
-		ta.setAttribute('style',
-			'position:fixed;' +
-			`left:${tlClient.x}px;top:${tlClient.y}px;` +
-			`width:${widthPx}px;height:${heightPx}px;` +
-			`font-size:${target.fontSize * pixelScale}px;` +
-			'font-family:sans-serif;' +
-			'line-height:1.2;' +
-			'padding:0;margin:0;border:1px solid #4a90e2;' +
-			'background:rgba(255,255,255,0.96);color:#222;' +
-			'box-sizing:border-box;outline:none;resize:none;' +
-			'overflow:hidden;z-index:9998;');
-		document.body.appendChild(ta);
+
+		let wrapper = null;
+		if (view.kind === 'shapeLabel') {
+			// Shape labels are centered inside the shape's bbox. A flexbox
+			// wrapper handles vertical alignment; the textarea auto-grows in
+			// height based on its content so the text block stays optically
+			// centered while typing.
+			wrapper = document.createElement('div');
+			wrapper.setAttribute('style',
+				'position:fixed;' +
+				`left:${tlClient.x}px;top:${tlClient.y}px;` +
+				`width:${widthPx}px;height:${heightPx}px;` +
+				'display:flex;justify-content:center;' +
+				`align-items:${flexAlignFor(view.verticalAlign)};` +
+				`background:${view.background};` +
+				'border:1px solid #4a90e2;border-radius:2px;' +
+				'box-sizing:border-box;overflow:hidden;z-index:9998;');
+
+			ta.setAttribute('style',
+				'width:100%;max-height:100%;' +
+				`font-size:${view.fontSize * pixelScale}px;` +
+				'font-family:sans-serif;line-height:1.2;' +
+				`text-align:${view.textAlign};` +
+				`color:${view.color};background:transparent;` +
+				'padding:2px 4px;margin:0;' +
+				'border:none;outline:none;resize:none;' +
+				'box-sizing:border-box;overflow:hidden;');
+			wrapper.appendChild(ta);
+			document.body.appendChild(wrapper);
+		} else {
+			// TextElement editor: full-bbox textarea, no flex centering.
+			ta.setAttribute('style',
+				'position:fixed;' +
+				`left:${tlClient.x}px;top:${tlClient.y}px;` +
+				`width:${widthPx}px;height:${heightPx}px;` +
+				`font-size:${view.fontSize * pixelScale}px;` +
+				'font-family:sans-serif;line-height:1.2;' +
+				`text-align:${view.textAlign};` +
+				'padding:2px 4px;margin:0;' +
+				'border:1px solid #4a90e2;border-radius:2px;' +
+				`background:${view.background};color:${view.color};` +
+				'box-sizing:border-box;outline:none;resize:none;' +
+				'overflow:hidden;z-index:9998;');
+			document.body.appendChild(ta);
+		}
 
 		textEditor = {
-			elementId: target.id,
-			originalText: target.text || '',
-			fontSize: target.fontSize || TEXT_DEFAULT_FONT_SIZE,
+			kind: view.kind,
+			elementId: view.elementId,
+			originalText: view.originalText || '',
+			fontSize: view.fontSize || TEXT_DEFAULT_FONT_SIZE,
 			textarea: ta,
+			wrapper,
 			hiddenNode: null,
 			onCommit: typeof onCommit === 'function' ? onCommit : null,
 			focusHandle: null,
+			maxHeightPx: heightPx,
 		};
 
-		hideEditedTextNode(target.id);
+		hideEditedTextNode(view.elementId, view.kind);
 		updateTextControls();
 
 		ta.addEventListener('keydown', onTextEditorKeyDown);
 		ta.addEventListener('blur', onTextEditorBlur);
+
+		// Auto-grow the shape-label textarea so the centered text block
+		// expands downward as the user types and stays vertically centered.
+		if (view.kind === 'shapeLabel') {
+			ta.addEventListener('input', autoResizeShapeLabelTextarea);
+			autoResizeShapeLabelTextarea();
+		}
 
 		focusHandle = setTimeout(() => {
 			if (!textEditor || textEditor.textarea !== ta) return;
@@ -1247,16 +1386,42 @@
 		textEditor.focusHandle = focusHandle;
 	}
 
-	function hideEditedTextNode(elementId) {
+	/**
+	 * Resizes the shape-label textarea to fit its content (clamped to the
+	 * shape's bbox). Called on init and on every input event.
+	 */
+	function autoResizeShapeLabelTextarea() {
+		if (!textEditor || textEditor.kind !== 'shapeLabel') return;
+		const ta = textEditor.textarea;
+		ta.style.height = 'auto';
+		const max = textEditor.maxHeightPx || ta.scrollHeight;
+		ta.style.height = `${Math.min(ta.scrollHeight, max)}px`;
+	}
+
+	/**
+	 * Hides the on-canvas representation of the element being edited so
+	 * the textarea is not visually duplicated by the rendered text.
+	 *  - 'text' kind: hides the whole element node;
+	 *  - 'shapeLabel': hides only the <text data-shape-label> child so the
+	 *    shape itself stays visible underneath the (translucent) textarea.
+	 */
+	function hideEditedTextNode(elementId, kind) {
 		if (!textEditor) return;
 		const root = svg();
 		if (!root) return;
 		const escId = String(elementId).replace(/["\\]/g, '\\$&');
 		const node = root.querySelector(`[data-element-id="${escId}"]`);
-		if (node) {
-			node.style.visibility = 'hidden';
-			textEditor.hiddenNode = node;
+		if (!node) return;
+		if (kind === 'shapeLabel') {
+			const labelNode = node.querySelector('[data-shape-label="1"]');
+			if (labelNode) {
+				labelNode.style.visibility = 'hidden';
+				textEditor.hiddenNode = labelNode;
+			}
+			return;
 		}
+		node.style.visibility = 'hidden';
+		textEditor.hiddenNode = node;
 	}
 
 	function onTextEditorKeyDown(evt) {
@@ -1286,14 +1451,19 @@
 
 	function closeTextOverlayEditor(reason) {
 		if (!textEditor) return;
-		const { originalText, textarea, hiddenNode, onCommit, focusHandle, fontSize } = textEditor;
+		const { originalText, textarea, wrapper, hiddenNode, onCommit, focusHandle, fontSize } = textEditor;
 		const nextValue = textarea.value;
 		// Detach listeners and pending timers before removing the node so
 		// blur callbacks and the deferred focus call do not re-enter.
 		if (focusHandle !== null) clearTimeout(focusHandle);
 		textarea.removeEventListener('keydown', onTextEditorKeyDown);
 		textarea.removeEventListener('blur', onTextEditorBlur);
-		if (textarea.parentNode) textarea.parentNode.removeChild(textarea);
+		textarea.removeEventListener('input', autoResizeShapeLabelTextarea);
+		// Shape-label editor uses a wrapper div; remove the wrapper (which
+		// also detaches the textarea). Plain TextElement editor has no
+		// wrapper - remove the textarea directly.
+		const toRemove = wrapper || textarea;
+		if (toRemove && toRemove.parentNode) toRemove.parentNode.removeChild(toRemove);
 		if (hiddenNode) hiddenNode.style.visibility = '';
 		textEditor = null;
 
@@ -1309,6 +1479,24 @@
 		const changed = mapElement(elementId, (e) => {
 			if (e.type !== 'text') return e;
 			return Object.assign({}, e, { text: nextText });
+		});
+		if (!changed) return;
+		markDirty();
+		render();
+	}
+
+	/**
+	 * Writes a new label.text into a shape element. Defaults are filled
+	 * in for old documents that lacked a label sub-object - this also
+	 * future-proofs against hand-edited JSON.
+	 */
+	function updateShapeLabelText(elementId, nextText) {
+		const changed = mapElement(elementId, (e) => {
+			if (!LABELED_SHAPE_TYPES.has(e.type)) return e;
+			const prev = e.label || DEFAULT_SHAPE_LABEL;
+			if ((prev.text || '') === (nextText || '')) return e;
+			const nextLabel = Object.assign({}, DEFAULT_SHAPE_LABEL, prev, { text: nextText || '' });
+			return Object.assign({}, e, { label: nextLabel });
 		});
 		if (!changed) return;
 		markDirty();

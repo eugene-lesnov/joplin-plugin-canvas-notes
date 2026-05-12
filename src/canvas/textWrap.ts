@@ -158,3 +158,60 @@ export function computeTextHeight(text: string, width: number, fontSize: number)
 	const count = Math.max(1, lines.length);
 	return Math.ceil(count * lineHeight);
 }
+
+/** Inner horizontal padding for embedded shape labels. */
+export const SHAPE_LABEL_PADDING = 4;
+
+/**
+ * Computes positioning for an embedded shape label inside the box
+ * (x, y, w, h). Returns wrapped lines, the SVG text-anchor value, the
+ * x anchor and the baseline y of the FIRST line. Subsequent lines are
+ * placed with dy = fontSize * TEXT_LINE_HEIGHT_RATIO. Negative or zero
+ * sized boxes collapse to a single line at the box origin.
+ *
+ * Sharing this helper between the webview renderer and the SVG
+ * serializer keeps the in-app preview and exported SVG visually
+ * identical.
+ */
+export function layoutShapeLabel(
+	text: string,
+	box: { x: number; y: number; w: number; h: number },
+	fontSize: number,
+	align: 'left' | 'center' | 'right',
+	verticalAlign: 'top' | 'middle' | 'bottom',
+): { lines: string[]; textAnchor: 'start' | 'middle' | 'end'; x: number; firstBaselineY: number } {
+	const innerW = Math.max(1, box.w - SHAPE_LABEL_PADDING * 2);
+	const maxChars = charsPerWidth(innerW, fontSize);
+	const lines = wrapByWidth(text, maxChars);
+	const safeLines = lines.length > 0 ? lines : [''];
+
+	const lineHeight = fontSize * TEXT_LINE_HEIGHT_RATIO;
+	const totalHeight = safeLines.length * lineHeight;
+
+	let textAnchor: 'start' | 'middle' | 'end';
+	let x: number;
+	if (align === 'left') {
+		textAnchor = 'start';
+		x = box.x + SHAPE_LABEL_PADDING;
+	} else if (align === 'right') {
+		textAnchor = 'end';
+		x = box.x + box.w - SHAPE_LABEL_PADDING;
+	} else {
+		textAnchor = 'middle';
+		x = box.x + box.w / 2;
+	}
+
+	// Baseline of the first line. Each subsequent line shifts by lineHeight.
+	let firstBaselineY: number;
+	if (verticalAlign === 'top') {
+		firstBaselineY = box.y + SHAPE_LABEL_PADDING + fontSize;
+	} else if (verticalAlign === 'bottom') {
+		firstBaselineY = box.y + box.h - SHAPE_LABEL_PADDING - totalHeight + fontSize;
+	} else {
+		// middle: vertically center the block, then offset by fontSize so the
+		// first baseline lands at the top of the centered block.
+		firstBaselineY = box.y + (box.h - totalHeight) / 2 + fontSize;
+	}
+
+	return { lines: safeLines, textAnchor, x, firstBaselineY };
+}

@@ -45,6 +45,9 @@ const SUPPORTED_ARROW_KINDS: ReadonlySet<string> = new Set<string>([
 	'none', 'arrow', 'triangle', 'diamond-open', 'diamond-filled',
 ]);
 
+const SUPPORTED_LABEL_ALIGNS: ReadonlySet<string> = new Set<string>(['left', 'center', 'right']);
+const SUPPORTED_LABEL_VALIGNS: ReadonlySet<string> = new Set<string>(['top', 'middle', 'bottom']);
+
 function isObject(v: unknown): v is Record<string, unknown> {
 	return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
@@ -73,6 +76,26 @@ function validateShapeStyle(e: Record<string, unknown>): void {
 	if (!isString(e.fill)) throw new Error('fill must be string');
 }
 
+/**
+ * Validates the optional embedded label on a shape. The field is
+ * optional - missing label is fine and means the shape has no caption.
+ * When present, every sub-field must be valid.
+ */
+function validateShapeLabel(e: Record<string, unknown>): void {
+	if (e.label === undefined) return;
+	if (!isObject(e.label)) throw new Error('label must be an object');
+	const l = e.label;
+	if (!isString(l.text)) throw new Error('label.text must be string');
+	if (!isFiniteNumber(l.fontSize) || l.fontSize <= 0) throw new Error('label.fontSize must be a positive number');
+	if (!isString(l.color)) throw new Error('label.color must be string');
+	if (!isString(l.align) || !SUPPORTED_LABEL_ALIGNS.has(l.align)) {
+		throw new Error('label.align must be left|center|right');
+	}
+	if (!isString(l.verticalAlign) || !SUPPORTED_LABEL_VALIGNS.has(l.verticalAlign)) {
+		throw new Error('label.verticalAlign must be top|middle|bottom');
+	}
+}
+
 function validateElement(raw: unknown): asserts raw is CanvasElement {
 	if (!isObject(raw)) throw new Error('Element must be an object');
 	validateBase(raw);
@@ -81,21 +104,25 @@ function validateElement(raw: unknown): asserts raw is CanvasElement {
 			if (!isFiniteNumber(raw.x) || !isFiniteNumber(raw.y)) throw new Error('rectangle: x,y required');
 			if (!isFiniteNumber(raw.w) || !isFiniteNumber(raw.h)) throw new Error('rectangle: w,h required');
 			validateShapeStyle(raw);
+			validateShapeLabel(raw);
 			break;
 		case 'square':
 			if (!isFiniteNumber(raw.x) || !isFiniteNumber(raw.y)) throw new Error('square: x,y required');
 			if (!isFiniteNumber(raw.size)) throw new Error('square: size required');
 			validateShapeStyle(raw);
+			validateShapeLabel(raw);
 			break;
 		case 'circle':
 			if (!isFiniteNumber(raw.cx) || !isFiniteNumber(raw.cy)) throw new Error('circle: cx,cy required');
 			if (!isFiniteNumber(raw.r)) throw new Error('circle: r required');
 			validateShapeStyle(raw);
+			validateShapeLabel(raw);
 			break;
 		case 'ellipse':
 			if (!isFiniteNumber(raw.cx) || !isFiniteNumber(raw.cy)) throw new Error('ellipse: cx,cy required');
 			if (!isFiniteNumber(raw.rx) || !isFiniteNumber(raw.ry)) throw new Error('ellipse: rx,ry required');
 			validateShapeStyle(raw);
+			validateShapeLabel(raw);
 			break;
 		case 'shape':
 			if (!isString(raw.shapeType) || !SUPPORTED_SHAPE_KINDS.has(raw.shapeType)) {
@@ -104,6 +131,7 @@ function validateElement(raw: unknown): asserts raw is CanvasElement {
 			if (!isFiniteNumber(raw.x) || !isFiniteNumber(raw.y)) throw new Error('shape: x,y required');
 			if (!isFiniteNumber(raw.w) || !isFiniteNumber(raw.h)) throw new Error('shape: w,h required');
 			validateShapeStyle(raw);
+			validateShapeLabel(raw);
 			break;
 		case 'arrow':
 		case 'line': {

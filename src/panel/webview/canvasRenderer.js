@@ -420,13 +420,90 @@
 		return text;
 	}
 
+	/**
+	 * Returns the box used to position an embedded shape label. Handles
+	 * the per-type geometry differences (rectangle/shape use w,h; square
+	 * uses size for both; circle/ellipse expand from center). Negative
+	 * width/height boxes are normalized so labels render correctly while
+	 * the user is drag-resizing into the opposite quadrant.
+	 */
+	function labelBoxFor(e) {
+		if (e.type === 'rectangle' || e.type === 'shape') {
+			const x = e.w >= 0 ? e.x : e.x + e.w;
+			const y = e.h >= 0 ? e.y : e.y + e.h;
+			return { x, y, w: Math.abs(e.w), h: Math.abs(e.h) };
+		}
+		if (e.type === 'square') {
+			return { x: e.x, y: e.y, w: e.size, h: e.size };
+		}
+		if (e.type === 'circle') {
+			return { x: e.cx - e.r, y: e.cy - e.r, w: e.r * 2, h: e.r * 2 };
+		}
+		if (e.type === 'ellipse') {
+			return { x: e.cx - e.rx, y: e.cy - e.ry, w: e.rx * 2, h: e.ry * 2 };
+		}
+		return null;
+	}
+
+	/**
+	 * Builds the SVG <text> node for an embedded shape label. Returns
+	 * null when there is nothing to draw. pointer-events="none" makes
+	 * the label transparent to clicks so the shape under it stays
+	 * selectable.
+	 */
+	function renderShapeLabel(e) {
+		const label = e.label;
+		if (!label || !label.text) return null;
+		const box = labelBoxFor(e);
+		if (!box || box.w <= 0 || box.h <= 0) return null;
+
+		const layout = TextWrap.layoutShapeLabel(
+			label.text, box, label.fontSize,
+			label.align, label.verticalAlign,
+		);
+		const lineHeight = label.fontSize * TextWrap.TEXT_LINE_HEIGHT_RATIO;
+
+		const text = el('text', {
+			x: layout.x,
+			y: layout.firstBaselineY,
+			'font-size': label.fontSize,
+			'font-family': 'sans-serif',
+			fill: label.color,
+			'text-anchor': layout.textAnchor,
+			'pointer-events': 'none',
+			// Marks the label sub-node so the editor can hide only the
+			// label (not the whole shape) while the textarea overlay is open.
+			'data-shape-label': '1',
+		});
+		layout.lines.forEach((line, idx) => {
+			const tspan = el('tspan', { x: layout.x });
+			if (idx > 0) tspan.setAttribute('dy', String(lineHeight));
+			tspan.setAttribute('xml:space', 'preserve');
+			// Empty <tspan> collapses vertically; force a glyph for blank lines.
+			tspan.textContent = line.length === 0 ? '\u200b' : line;
+			text.appendChild(tspan);
+		});
+		return text;
+	}
+
+	/** Wraps shape node + optional label into a <g>. */
+	function withLabel(shapeNode, e) {
+		if (!shapeNode) return null;
+		const label = renderShapeLabel(e);
+		if (!label) return shapeNode;
+		const g = el('g');
+		g.appendChild(shapeNode);
+		g.appendChild(label);
+		return g;
+	}
+
 	function renderElement(e) {
 		switch (e.type) {
 			case 'rectangle':
-			case 'square':    return renderRectLike(e);
-			case 'circle':    return renderCircle(e);
-			case 'ellipse':   return renderEllipse(e);
-			case 'shape':     return renderShape(e);
+			case 'square':    return withLabel(renderRectLike(e), e);
+			case 'circle':    return withLabel(renderCircle(e), e);
+			case 'ellipse':   return withLabel(renderEllipse(e), e);
+			case 'shape':     return withLabel(renderShape(e), e);
 			case 'arrow':
 			case 'line':      return renderSegment(e);
 			case 'freehand':  return renderFreehand(e);

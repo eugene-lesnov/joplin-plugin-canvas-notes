@@ -11,7 +11,7 @@
  */
 
 import { assertCanvasDocument } from './canvasModel';
-import { CanvasDocument } from './canvasTypes';
+import { CanvasDocument, DEFAULT_SHAPE_LABEL } from './canvasTypes';
 import { CANVAS_METADATA_ID } from './svgConstants';
 import { unescapeXml } from './xmlEscape';
 
@@ -84,6 +84,39 @@ function normalizeLineLikeElement(raw: Record<string, unknown>): void {
 	}
 }
 
+/** Element types that may carry an embedded label. */
+const LABELED_SHAPE_TYPES: ReadonlySet<string> = new Set<string>([
+	'rectangle', 'square', 'circle', 'ellipse', 'shape',
+]);
+
+const LABEL_ALIGNS: ReadonlySet<string> = new Set<string>(['left', 'center', 'right']);
+const LABEL_VALIGNS: ReadonlySet<string> = new Set<string>(['top', 'middle', 'bottom']);
+
+/**
+ * Fills the embedded shape label with safe defaults. Old documents have
+ * no `label` field at all - we materialize it with the MVP defaults so
+ * downstream code can always read label.text/.fontSize/etc. without
+ * branching on presence.
+ *
+ * If a partial label is present (e.g. user-edited JSON), each missing
+ * or invalid sub-field falls back to its default. Unknown extra keys on
+ * the label object are preserved as-is.
+ */
+function normalizeShapeLabel(raw: Record<string, unknown>): void {
+	const existing = isPlainObject(raw.label) ? raw.label : {};
+	const align = existing.align;
+	const valign = existing.verticalAlign;
+	const normalized: Record<string, unknown> = {
+		...existing,
+		text: stringOr(existing.text, DEFAULT_SHAPE_LABEL.text),
+		fontSize: numberOr(existing.fontSize, DEFAULT_SHAPE_LABEL.fontSize),
+		color: stringOr(existing.color, DEFAULT_SHAPE_LABEL.color),
+		align: typeof align === 'string' && LABEL_ALIGNS.has(align) ? align : DEFAULT_SHAPE_LABEL.align,
+		verticalAlign: typeof valign === 'string' && LABEL_VALIGNS.has(valign) ? valign : DEFAULT_SHAPE_LABEL.verticalAlign,
+	};
+	raw.label = normalized;
+}
+
 /**
  * Walks the parsed JSON document and normalizes elements that need
  * fallback handling.
@@ -96,6 +129,9 @@ function normalizeDocument(parsed: unknown): void {
 		if (!isPlainObject(el)) continue;
 		if (el.type === 'text') normalizeTextElement(el);
 		else if (el.type === 'arrow' || el.type === 'line') normalizeLineLikeElement(el);
+		if (typeof el.type === 'string' && LABELED_SHAPE_TYPES.has(el.type)) {
+			normalizeShapeLabel(el);
+		}
 	}
 }
 
