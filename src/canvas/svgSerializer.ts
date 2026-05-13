@@ -44,9 +44,6 @@ import {
 	stripInvalidXmlChars,
 } from './xmlEscape';
 
-// Re-exports kept for backwards compatibility with existing imports.
-export { CANVAS_METADATA_ID, SVG_NAMESPACE, SVG_VERSION } from './svgConstants';
-export { escapeXml, safeText } from './xmlEscape';
 
 /**
  * Serializes a CanvasDocument into a self-contained SVG string.

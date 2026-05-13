@@ -63,8 +63,14 @@ export type ShapeType =
 	| 'callout'
 	| 'stickyNote';
 
-/** Runtime list of all ShapeType values; mirrors the type union. */
-export const SHAPE_TYPES: readonly ShapeType[] = [
+/**
+ * Runtime list of all ShapeType values; mirrors the type union.
+ *
+ * Internal: used to back `isShapeType`. The webview keeps its own copy
+ * in `src/panel/webview/canvasTypes.js` (mirrored intentionally so the
+ * webview bundle stays standalone).
+ */
+const SHAPE_TYPES: readonly ShapeType[] = [
 	'rectangle', 'roundedRectangle', 'ellipse',
 	'triangle', 'diamond', 'hexagon', 'parallelogram', 'trapezoid',
 	'cloud', 'cylinder', 'star', 'heart', 'envelope',
@@ -235,17 +241,17 @@ export type LineStrokeStyle = 'solid' | 'dashed' | 'dotted';
 export type LineArrowKind = 'none' | 'arrow' | 'triangle' | 'diamond-open' | 'diamond-filled';
 
 /**
- * Common fields for arrow/line elements. Both share endpoints, stroke
- * style and optional arrowhead markers on each end. The legacy `type`
- * discriminator stays (line vs arrow) for backward compatibility, but
- * real visual behavior is driven by `startArrow` / `endArrow` /
- * `strokeStyle`. Defaults applied on load:
+ * Shared geometry/style for line-like elements (arrow and plain line).
+ * The legacy `type` discriminator stays (line vs arrow) for backward
+ * compatibility, but real visual behavior is driven by
+ * `startArrow` / `endArrow` / `strokeStyle`.
+ *
+ * Defaults applied on load:
  *   - strokeStyle: 'solid'
  *   - startArrow:  'none'
  *   - endArrow:    'arrow' if type === 'arrow', otherwise 'none'
  */
-export interface ArrowElement extends BaseElement {
-	type: 'arrow';
+interface LineLikeBase extends BaseElement {
 	from: ArrowEndpoint;
 	to: ArrowEndpoint;
 	stroke: string;
@@ -257,18 +263,13 @@ export interface ArrowElement extends BaseElement {
 	label?: LineLabel;
 }
 
-/** Plain line (no marker). Same shape as ArrowElement but visually undecorated. */
-export interface LineElement extends BaseElement {
+export interface ArrowElement extends LineLikeBase {
+	type: 'arrow';
+}
+
+/** Plain line (no marker by default). Structurally identical to ArrowElement. */
+export interface LineElement extends LineLikeBase {
 	type: 'line';
-	from: ArrowEndpoint;
-	to: ArrowEndpoint;
-	stroke: string;
-	strokeWidth: number;
-	strokeStyle?: LineStrokeStyle;
-	startArrow?: LineArrowKind;
-	endArrow?: LineArrowKind;
-	/** Optional embedded label rendered near the segment midpoint. */
-	label?: LineLabel;
 }
 
 /**

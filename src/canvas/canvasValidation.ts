@@ -19,15 +19,20 @@ const NON_SHAPE_TYPES: ReadonlySet<string> = new Set<string>([
 	'arrow', 'line', 'freehand', 'noteCard', 'todoCard', 'text',
 ]);
 
-const SUPPORTED_STROKE_STYLES: ReadonlySet<string> = new Set<string>(['solid', 'dashed', 'dotted']);
-const SUPPORTED_ARROW_KINDS: ReadonlySet<string> = new Set<string>([
+/**
+ * Sets of supported enum-like string values used by both the validator
+ * and the loader-side normalizer in svgParser. Exported so there is a
+ * single source of truth for the on-disk contract.
+ */
+export const SUPPORTED_STROKE_STYLES: ReadonlySet<string> = new Set<string>(['solid', 'dashed', 'dotted']);
+export const SUPPORTED_ARROW_KINDS: ReadonlySet<string> = new Set<string>([
 	'none', 'arrow', 'triangle', 'diamond-open', 'diamond-filled',
 ]);
 
-const SUPPORTED_LABEL_ALIGNS: ReadonlySet<string> = new Set<string>(['left', 'center', 'right']);
-const SUPPORTED_LABEL_VALIGNS: ReadonlySet<string> = new Set<string>(['top', 'middle', 'bottom']);
-const SUPPORTED_LINE_LABEL_POSITIONS: ReadonlySet<string> = new Set<string>(['center']);
-const SUPPORTED_LINE_LABEL_ORIENTATIONS: ReadonlySet<string> = new Set<string>(['parallel', 'horizontal']);
+export const SUPPORTED_LABEL_ALIGNS: ReadonlySet<string> = new Set<string>(['left', 'center', 'right']);
+export const SUPPORTED_LABEL_VALIGNS: ReadonlySet<string> = new Set<string>(['top', 'middle', 'bottom']);
+export const SUPPORTED_LINE_LABEL_POSITIONS: ReadonlySet<string> = new Set<string>(['center']);
+export const SUPPORTED_LINE_LABEL_ORIENTATIONS: ReadonlySet<string> = new Set<string>(['parallel', 'horizontal']);
 
 function isObject(v: unknown): v is Record<string, unknown> {
 	return typeof v === 'object' && v !== null && !Array.isArray(v);

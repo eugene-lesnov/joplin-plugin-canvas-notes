@@ -10,7 +10,15 @@
  * uniformly in Node and inside the Joplin webview sandbox.
  */
 
-import { assertCanvasDocument } from './canvasModel';
+import {
+	assertCanvasDocument,
+	SUPPORTED_ARROW_KINDS,
+	SUPPORTED_LABEL_ALIGNS,
+	SUPPORTED_LABEL_VALIGNS,
+	SUPPORTED_LINE_LABEL_ORIENTATIONS,
+	SUPPORTED_LINE_LABEL_POSITIONS,
+	SUPPORTED_STROKE_STYLES,
+} from './canvasValidation';
 import { CanvasDocument, DEFAULT_LINE_LABEL, DEFAULT_SHAPE_LABEL, isShapeType } from './canvasTypes';
 import { CANVAS_METADATA_ID } from './svgConstants';
 import { unescapeXml } from './xmlEscape';
@@ -69,23 +77,21 @@ function normalizeTextElement(raw: Record<string, unknown>): void {
  * Normalizes optional fields on arrow/line elements introduced after the
  * initial release (strokeStyle, startArrow, endArrow). Old documents
  * predate these fields - we derive sensible defaults so the validator
- * never fails on previously-saved canvases.
+ * never fails on previously-saved canvases. Existing valid values (such
+ * as UML arrowhead kinds) are preserved.
  */
 function normalizeLineLikeElement(raw: Record<string, unknown>): void {
-	if (raw.strokeStyle !== 'dashed' && raw.strokeStyle !== 'dotted' && raw.strokeStyle !== 'solid') {
+	if (typeof raw.strokeStyle !== 'string' || !SUPPORTED_STROKE_STYLES.has(raw.strokeStyle)) {
 		raw.strokeStyle = 'solid';
 	}
-	if (raw.startArrow !== 'arrow' && raw.startArrow !== 'none') {
+	if (typeof raw.startArrow !== 'string' || !SUPPORTED_ARROW_KINDS.has(raw.startArrow)) {
 		raw.startArrow = 'none';
 	}
-	if (raw.endArrow !== 'arrow' && raw.endArrow !== 'none') {
+	if (typeof raw.endArrow !== 'string' || !SUPPORTED_ARROW_KINDS.has(raw.endArrow)) {
 		// Preserve the original visual: arrows had a head, lines did not.
 		raw.endArrow = raw.type === 'arrow' ? 'arrow' : 'none';
 	}
 }
-
-const LABEL_ALIGNS: ReadonlySet<string> = new Set<string>(['left', 'center', 'right']);
-const LABEL_VALIGNS: ReadonlySet<string> = new Set<string>(['top', 'middle', 'bottom']);
 
 /**
  * Fills the embedded shape label with safe defaults. Old documents have
@@ -106,14 +112,11 @@ function normalizeShapeLabel(raw: Record<string, unknown>): void {
 		text: stringOr(existing.text, DEFAULT_SHAPE_LABEL.text),
 		fontSize: numberOr(existing.fontSize, DEFAULT_SHAPE_LABEL.fontSize),
 		color: stringOr(existing.color, DEFAULT_SHAPE_LABEL.color),
-		align: typeof align === 'string' && LABEL_ALIGNS.has(align) ? align : DEFAULT_SHAPE_LABEL.align,
-		verticalAlign: typeof valign === 'string' && LABEL_VALIGNS.has(valign) ? valign : DEFAULT_SHAPE_LABEL.verticalAlign,
+		align: typeof align === 'string' && SUPPORTED_LABEL_ALIGNS.has(align) ? align : DEFAULT_SHAPE_LABEL.align,
+		verticalAlign: typeof valign === 'string' && SUPPORTED_LABEL_VALIGNS.has(valign) ? valign : DEFAULT_SHAPE_LABEL.verticalAlign,
 	};
 	raw.label = normalized;
 }
-
-const LINE_LABEL_POSITIONS: ReadonlySet<string> = new Set<string>(['center']);
-const LINE_LABEL_ORIENTATIONS: ReadonlySet<string> = new Set<string>(['parallel', 'horizontal']);
 
 /**
  * Fills the embedded line/arrow label with safe defaults. Same intent
@@ -128,10 +131,10 @@ function normalizeLineLabel(raw: Record<string, unknown>): void {
 		text: stringOr(existing.text, DEFAULT_LINE_LABEL.text),
 		fontSize: numberOr(existing.fontSize, DEFAULT_LINE_LABEL.fontSize),
 		color: stringOr(existing.color, DEFAULT_LINE_LABEL.color),
-		position: typeof position === 'string' && LINE_LABEL_POSITIONS.has(position)
+		position: typeof position === 'string' && SUPPORTED_LINE_LABEL_POSITIONS.has(position)
 			? position
 			: DEFAULT_LINE_LABEL.position,
-		orientation: typeof orientation === 'string' && LINE_LABEL_ORIENTATIONS.has(orientation)
+		orientation: typeof orientation === 'string' && SUPPORTED_LINE_LABEL_ORIENTATIONS.has(orientation)
 			? orientation
 			: DEFAULT_LINE_LABEL.orientation,
 	};

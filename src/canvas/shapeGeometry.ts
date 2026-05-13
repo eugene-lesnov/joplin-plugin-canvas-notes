@@ -236,7 +236,7 @@ export type ShapeDraw =
 	| { kind: 'compound'; pieces: ShapePiece[] };
 
 /** Rounded rectangle - fixed corner radius capped to fit the smaller side. */
-export function roundedRectangleRx(b: Box): number {
+function roundedRectangleRx(b: Box): number {
 	return Math.min(12, b.w / 5, b.h / 5);
 }
 
@@ -726,7 +726,7 @@ export function shapeDraw(kind: ShapeType, b: Box): ShapeDraw {
 		case 'ellipse':           return { kind: 'compound', pieces: [
 			{ type: 'ellipse', cx: b.x + b.w / 2, cy: b.y + b.h / 2, rx: b.w / 2, ry: b.h / 2 },
 		] };
-		case 'roundedRectangle':
+		case 'roundedRectangle':  return { kind: 'rect', x: b.x, y: b.y, w: b.w, h: b.h, rx: roundedRectangleRx(b) };
 		case 'triangle':          return { kind: 'polygon', points: trianglePoints(b) };
 		case 'diamond':           return { kind: 'polygon', points: diamondPoints(b) };
 		case 'parallelogram':     return { kind: 'polygon', points: parallelogramPoints(b) };

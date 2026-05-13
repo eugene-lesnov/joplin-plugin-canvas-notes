@@ -548,7 +548,7 @@
 			case 'ellipse':                return { kind: 'compound', pieces: [
 				{ type: 'ellipse', cx: box.x + box.w / 2, cy: box.y + box.h / 2, rx: box.w / 2, ry: box.h / 2 },
 			] };
-			case 'roundedRectangle':
+			case 'roundedRectangle':       return { kind: 'rect', x: box.x, y: box.y, w: box.w, h: box.h, rx: roundedRectangleRx(box) };
 			case 'triangle':               return { kind: 'polygon', points: trianglePoints(box) };
 			case 'diamond':                return { kind: 'polygon', points: diamondPoints(box) };
 			case 'parallelogram':          return { kind: 'polygon', points: parallelogramPoints(box) };
