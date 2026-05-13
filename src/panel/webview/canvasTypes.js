@@ -14,14 +14,14 @@
 
 	/** Mirrors `ShapeType` / `SHAPE_TYPES` in canvasTypes.ts. */
 	const SHAPE_TYPES = [
-		'rectangle', 'ellipse', 'roundedRectangle',
-		'triangle', 'diamond', 'parallelogram', 'trapezoid',
-		'hexagon', 'pentagon', 'star',
+		'rectangle', 'roundedRectangle', 'ellipse',
+		'triangle', 'diamond', 'hexagon', 'parallelogram', 'trapezoid',
+		'cloud', 'cylinder', 'star', 'heart', 'envelope',
 		'terminator', 'document', 'multipleDocuments',
 		'manualInput', 'predefinedProcess', 'delay', 'offPageConnector',
-		'cylinder', 'cloud', 'queue', 'server', 'actor',
-		'browser', 'mobile', 'laptop', 'desktop', 'container',
-		'gear', 'loadBalancer', 'firewall', 'lock', 'folder',
+		'table', 'swimlane', 'storedData', 'punchedTape',
+		'queue', 'server', 'actor', 'browser', 'mobile', 'laptop', 'desktop',
+		'container', 'gear', 'loadBalancer', 'firewall', 'lock', 'folder',
 		'card', 'callout', 'stickyNote',
 	];
 

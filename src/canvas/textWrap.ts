@@ -119,34 +119,33 @@ export function computeTextHeight(text: string, width: number, fontSize: number)
 	return Math.ceil(count * lineHeight);
 }
 
-/** Inner horizontal padding for embedded shape labels. */
+/** Horizontal padding for shape labels. */
 export const SHAPE_LABEL_PADDING = 4;
 
+/** Gap between a shape's bottom edge and its external label. */
+export const SHAPE_LABEL_EXTERNAL_GAP = 6;
+
 /**
- * Computes positioning for an embedded shape label inside the box
- * (x, y, w, h). Returns wrapped lines, the SVG text-anchor value, the
- * x anchor and the baseline y of the FIRST line. Subsequent lines are
- * placed with dy = fontSize * TEXT_LINE_HEIGHT_RATIO. Negative or zero
- * sized boxes collapse to a single line at the box origin.
+ * Computes positioning for a shape label below the shape box. Returns
+ * wrapped lines, the SVG text-anchor value, the x anchor and the
+ * baseline y of the FIRST line. `verticalAlign` is kept in the signature
+ * for backward compatibility with persisted label settings, but shape
+ * labels are now always laid out externally below the figure.
  *
  * Sharing this helper between the webview renderer and the SVG
- * serializer keeps the in-app view and exported SVG visually
- * identical.
+ * serializer keeps the in-app view and exported SVG visually identical.
  */
 export function layoutShapeLabel(
 	text: string,
 	box: { x: number; y: number; w: number; h: number },
 	fontSize: number,
 	align: 'left' | 'center' | 'right',
-	verticalAlign: 'top' | 'middle' | 'bottom',
+	_verticalAlign: 'top' | 'middle' | 'bottom',
 ): { lines: string[]; textAnchor: 'start' | 'middle' | 'end'; x: number; firstBaselineY: number } {
-	const innerW = Math.max(1, box.w - SHAPE_LABEL_PADDING * 2);
-	const maxChars = charsPerWidth(innerW, fontSize);
+	const labelW = Math.max(1, box.w - SHAPE_LABEL_PADDING * 2);
+	const maxChars = charsPerWidth(labelW, fontSize);
 	const lines = wrapByWidth(text, maxChars);
 	const safeLines = lines.length > 0 ? lines : [''];
-
-	const lineHeight = fontSize * TEXT_LINE_HEIGHT_RATIO;
-	const totalHeight = safeLines.length * lineHeight;
 
 	let textAnchor: 'start' | 'middle' | 'end';
 	let x: number;
@@ -161,17 +160,6 @@ export function layoutShapeLabel(
 		x = box.x + box.w / 2;
 	}
 
-	// Baseline of the first line. Each subsequent line shifts by lineHeight.
-	let firstBaselineY: number;
-	if (verticalAlign === 'top') {
-		firstBaselineY = box.y + SHAPE_LABEL_PADDING + fontSize;
-	} else if (verticalAlign === 'bottom') {
-		firstBaselineY = box.y + box.h - SHAPE_LABEL_PADDING - totalHeight + fontSize;
-	} else {
-		// middle: vertically center the block, then offset by fontSize so the
-		// first baseline lands at the top of the centered block.
-		firstBaselineY = box.y + (box.h - totalHeight) / 2 + fontSize;
-	}
-
+	const firstBaselineY = box.y + box.h + SHAPE_LABEL_EXTERNAL_GAP + fontSize;
 	return { lines: safeLines, textAnchor, x, firstBaselineY };
 }

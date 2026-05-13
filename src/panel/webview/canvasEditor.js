@@ -1036,7 +1036,16 @@
 				fontSize: clampFontSize(pendingTextFontSize),
 			},
 		);
-		openTextOverlayEditor(draft, (nextText, snapshot) => {
+		const view = {
+			kind: 'text',
+			elementId: draft.id,
+			box: { x: bounds.x, y: bounds.y, w: bounds.width, h: bounds.height },
+			originalText: '',
+			fontSize: draft.fontSize,
+			color: '#222',
+			textAlign: 'left',
+		};
+		openTextOverlayEditor(view, (nextText, snapshot) => {
 			const trimmed = (nextText || '').replace(/^\s+|\s+$/g, '');
 			if (trimmed.length === 0) return; // empty - drop the draft
 			const fontSize = (snapshot && snapshot.fontSize) || draft.fontSize;
@@ -1422,29 +1431,28 @@
 		if (!box) return;
 		const label = target.label || DEFAULT_SHAPE_LABEL;
 
-		// Компактный overlay-бокс вокруг центра фигуры, как у line label.
-		// Растягивать textarea на весь bbox нельзя: фигуры сложной
-		// формы (cloud, callout) имеют bbox сильно больше видимой области,
-		// и прямоугольный textarea перекрывает всю фигуру.
 		const minW = 120;
 		const maxW = 400;
-		// 90% от ширины bbox - небольшой внутренний зазор для визуального
-		// разделения overlay и границ фигуры.
-		const w = Math.max(minW, Math.min(maxW, box.w * 0.9));
+		const TextWrap = window.CanvasNotes && window.CanvasNotes.TextWrap;
+		const gap = TextWrap && Number.isFinite(TextWrap.SHAPE_LABEL_EXTERNAL_GAP)
+			? TextWrap.SHAPE_LABEL_EXTERNAL_GAP
+			: 6;
+		const fontSize = label.fontSize || DEFAULT_SHAPE_LABEL.fontSize;
+		const w = Math.max(minW, Math.min(maxW, box.w));
 		const h = 60;
 		const cx = box.x + box.w / 2;
-		const cy = box.y + box.h / 2;
+		const y = box.y + box.h + gap;
 
 		const view = {
 			kind: 'shapeLabel',
 			elementId: target.id,
-			box: { x: cx - w / 2, y: cy - h / 2, w, h },
+			box: { x: cx - w / 2, y, w, h },
 			originalText: label.text || '',
-			fontSize: label.fontSize || DEFAULT_SHAPE_LABEL.fontSize,
+			fontSize,
 			color: label.color || DEFAULT_SHAPE_LABEL.color,
 			textAlign: label.align === 'left' ? 'left'
 				: (label.align === 'right' ? 'right' : 'center'),
-			verticalAlign: label.verticalAlign || DEFAULT_SHAPE_LABEL.verticalAlign,
+			verticalAlign: 'top',
 		};
 		openTextOverlayEditor(view, (nextText) => {
 			const nextLabelText = nextText || '';
@@ -1558,18 +1566,16 @@
 		ta.setAttribute('spellcheck', 'false');
 		ta.setAttribute('wrap', 'soft');
 
-		// Editor всегда прозрачный: под ним видна фигура/линия/фон,
-		// а оригин��льный текст скрыт через hideEditedTextNode. Рамка
-		// 1px solid #4a90e2 обозначает активную область редактирования.
+		// Editor is transparent: the shape/line/background remains visible,
+		// while the original text is hidden through hideEditedTextNode. The
+		// 1px border marks the active editing area.
 		let wrapper = null;
 		const useWrapper = view.kind === 'shapeLabel' || view.kind === 'lineLabel';
 		const wrapperCenterClientY = tlClient.y + heightPx / 2;
 		if (useWrapper) {
-			// Shape and line labels are centered inside their reference box.
-			// A flexbox wrapper handles vertical alignment; the textarea
-			// auto-grows in height based on its content. The wrapper grows
-			// symmetrically around the original center so the editable block
-			// stays anchored to the label's anchor point while typing.
+			// Label editors are anchored to their reference box and auto-grow
+			// with content. Shape labels use top alignment because their final
+			// position is below the figure; line labels keep center alignment.
 			wrapper = document.createElement('div');
 			wrapper.setAttribute('style',
 				'position:fixed;' +
@@ -1654,13 +1660,10 @@
 	}
 
 	/**
-	 * Resizes the shape/line label editor to fit its content. The textarea
-	 * collapses to exactly its content height (no minimum floor), and the
-	 * wrapper is re-anchored around the original midpoint so the first
-	 * line of the editable text lands on the same baseline the rendered
-	 * label uses. Without this exact fit, an empty textarea would be
-	 * taller than its single visible line and the text would appear
-	 * offset upwards compared to its final on-canvas position.
+	 * Resizes the shape/line label editor to fit its content. Shape labels
+	 * stay top-anchored below the figure. Line labels remain centered on
+	 * their original midpoint because their rendered label is midpoint-
+	 * anchored.
 	 */
 	function autoResizeShapeLabelTextarea() {
 		if (!textEditor) return;
@@ -1669,15 +1672,13 @@
 		const wrapper = textEditor.wrapper;
 		if (!wrapper) return;
 
-		// Measure intrinsic content height of the textarea exactly.
 		ta.style.height = 'auto';
 		const nextH = ta.scrollHeight;
 		ta.style.height = `${nextH}px`;
 		wrapper.style.height = `${nextH}px`;
-		// Re-anchor: keep the wrapper visually centered on its original
-		// midpoint so growth/shrink happens symmetrically (half up, half down)
-		// and the first line stays glued to the label's anchor point.
-		wrapper.style.top = `${textEditor.centerClientY - nextH / 2}px`;
+		if (textEditor.kind === 'lineLabel') {
+			wrapper.style.top = `${textEditor.centerClientY - nextH / 2}px`;
+		}
 	}
 
 	/**

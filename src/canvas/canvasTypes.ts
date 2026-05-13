@@ -16,18 +16,21 @@
  * `shapeGeometry.shapeDraw`.
  */
 export type ShapeType =
-	// Primitives + basic geometric forms.
+	// Basic / General.
 	| 'rectangle'
-	| 'ellipse'
 	| 'roundedRectangle'
+	| 'ellipse'
 	| 'triangle'
 	| 'diamond'
+	| 'hexagon'
 	| 'parallelogram'
 	| 'trapezoid'
-	| 'hexagon'
-	| 'pentagon'
+	| 'cloud'
+	| 'cylinder'
 	| 'star'
-	// Flowchart-specific.
+	| 'heart'
+	| 'envelope'
+	// Flowchart.
 	| 'terminator'
 	| 'document'
 	| 'multipleDocuments'
@@ -35,9 +38,13 @@ export type ShapeType =
 	| 'predefinedProcess'
 	| 'delay'
 	| 'offPageConnector'
-	// Architecture (servers, services, networking).
-	| 'cylinder'
-	| 'cloud'
+	// Containers / data.
+	| 'table'
+	| 'swimlane'
+	| 'storedData'
+	| 'punchedTape'
+	// Legacy (no longer in the palette but kept for backward
+	// compatibility with existing canvas files).
 	| 'queue'
 	| 'server'
 	| 'actor'
@@ -58,14 +65,14 @@ export type ShapeType =
 
 /** Runtime list of all ShapeType values; mirrors the type union. */
 export const SHAPE_TYPES: readonly ShapeType[] = [
-	'rectangle', 'ellipse', 'roundedRectangle',
-	'triangle', 'diamond', 'parallelogram', 'trapezoid',
-	'hexagon', 'pentagon', 'star',
+	'rectangle', 'roundedRectangle', 'ellipse',
+	'triangle', 'diamond', 'hexagon', 'parallelogram', 'trapezoid',
+	'cloud', 'cylinder', 'star', 'heart', 'envelope',
 	'terminator', 'document', 'multipleDocuments',
 	'manualInput', 'predefinedProcess', 'delay', 'offPageConnector',
-	'cylinder', 'cloud', 'queue', 'server', 'actor',
-	'browser', 'mobile', 'laptop', 'desktop', 'container',
-	'gear', 'loadBalancer', 'firewall', 'lock', 'folder',
+	'table', 'swimlane', 'storedData', 'punchedTape',
+	'queue', 'server', 'actor', 'browser', 'mobile', 'laptop', 'desktop',
+	'container', 'gear', 'loadBalancer', 'firewall', 'lock', 'folder',
 	'card', 'callout', 'stickyNote',
 ];
 

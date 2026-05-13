@@ -94,6 +94,36 @@
 		return { width, height };
 	}
 
+	const SHAPE_LABEL_EXTERNAL_GAP = 6;
+	const TEXT_LINE_HEIGHT_RATIO = 1.2;
+	const AVG_CHAR_WIDTH_RATIO = 0.6;
+
+	function shapeLabelBox(e) {
+		const label = e && e.label;
+		if (!label || !label.text) return null;
+		const b = elementBBox(e);
+		const fontSize = label.fontSize || 14;
+		const lines = String(label.text).split('\n');
+		let longest = 0;
+		for (const l of lines) if (l.length > longest) longest = l.length;
+		const pad = 6;
+		const textWidth = longest * fontSize * AVG_CHAR_WIDTH_RATIO + pad * 2;
+		const width = Math.max(1, Math.min(Math.max(1, b.w), textWidth));
+		const height = Math.max(1, lines.length * fontSize * TEXT_LINE_HEIGHT_RATIO) + pad * 2;
+		return {
+			x: b.x + (b.w - width) / 2,
+			y: b.y + b.h + SHAPE_LABEL_EXTERNAL_GAP,
+			w: width,
+			h: height,
+		};
+	}
+
+	function hitTestShapeLabel(e, px, py) {
+		const b = shapeLabelBox(e);
+		if (!b) return false;
+		return px >= b.x && py >= b.y && px <= b.x + b.w && py <= b.y + b.h;
+	}
+
 	/**
 	 * Hit-test the embedded label of a line/arrow element. Handles both
 	 * orientations: 'parallel' (rotated around midpoint) and 'horizontal'.
@@ -154,7 +184,8 @@
 			return false;
 		}
 		const b = elementBBox(e);
-		return px >= b.x && py >= b.y && px <= b.x + b.w && py <= b.y + b.h;
+		return (px >= b.x && py >= b.y && px <= b.x + b.w && py <= b.y + b.h)
+			|| (isShapeType(e.type) && hitTestShapeLabel(e, px, py));
 	}
 
 	window.CanvasNotes = window.CanvasNotes || {};
@@ -164,5 +195,6 @@
 		strokeHitRadius,
 		hitTest,
 		hitTestLineLabel,
+		hitTestShapeLabel,
 	};
 })();

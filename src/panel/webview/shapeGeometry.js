@@ -245,21 +245,6 @@
 		);
 	}
 
-	// ---- new basic shapes ---------------------------------------------
-
-	function pentagonPoints(b) {
-		const cx = b.x + b.w / 2;
-		const cy = b.y + b.h / 2;
-		const rx = b.w / 2;
-		const ry = b.h / 2;
-		const coords = [];
-		for (let i = 0; i < 5; i++) {
-			const angle = -Math.PI / 2 + i * 2 * Math.PI / 5;
-			coords.push([cx + rx * Math.cos(angle), cy + ry * Math.sin(angle)]);
-		}
-		return pts(coords);
-	}
-
 	function trapezoidPoints(b) {
 		const inset = Math.min(b.w * 0.2, b.h * 0.5);
 		return pts([
@@ -268,6 +253,61 @@
 			[b.x + b.w, b.y + b.h],
 			[b.x, b.y + b.h],
 		]);
+	}
+
+	function heartPath(b) {
+		const x = b.x, y = b.y, w = b.w, h = b.h;
+		return 'M ' + fmt(x + w * 0.5) + ' ' + fmt(y + h * 0.88) +
+			' C ' + fmt(x + w * 0.08) + ' ' + fmt(y + h * 0.58) + ', ' + fmt(x) + ' ' + fmt(y + h * 0.28) + ', ' + fmt(x + w * 0.22) + ' ' + fmt(y + h * 0.12) +
+			' C ' + fmt(x + w * 0.36) + ' ' + fmt(y) + ', ' + fmt(x + w * 0.5) + ' ' + fmt(y + h * 0.12) + ', ' + fmt(x + w * 0.5) + ' ' + fmt(y + h * 0.28) +
+			' C ' + fmt(x + w * 0.5) + ' ' + fmt(y + h * 0.12) + ', ' + fmt(x + w * 0.64) + ' ' + fmt(y) + ', ' + fmt(x + w * 0.78) + ' ' + fmt(y + h * 0.12) +
+			' C ' + fmt(x + w) + ' ' + fmt(y + h * 0.28) + ', ' + fmt(x + w * 0.92) + ' ' + fmt(y + h * 0.58) + ', ' + fmt(x + w * 0.5) + ' ' + fmt(y + h * 0.88) + ' Z';
+	}
+
+	function envelopePieces(b) {
+		return [
+			{ type: 'rect', x: b.x, y: b.y, w: b.w, h: b.h, rx: 2 },
+			{ type: 'line', x1: b.x, y1: b.y, x2: b.x + b.w / 2, y2: b.y + b.h * 0.55 },
+			{ type: 'line', x1: b.x + b.w, y1: b.y, x2: b.x + b.w / 2, y2: b.y + b.h * 0.55 },
+			{ type: 'line', x1: b.x, y1: b.y + b.h, x2: b.x + b.w * 0.4, y2: b.y + b.h * 0.45 },
+			{ type: 'line', x1: b.x + b.w, y1: b.y + b.h, x2: b.x + b.w * 0.6, y2: b.y + b.h * 0.45 },
+		];
+	}
+
+	function punchedTapePath(b) {
+		const amp = Math.min(b.h * 0.12, 10);
+		const y1 = b.y + amp;
+		const y2 = b.y + b.h - amp;
+		return 'M ' + fmt(b.x) + ' ' + fmt(y1) +
+			' C ' + fmt(b.x + b.w * 0.25) + ' ' + fmt(y1 - amp) + ', ' + fmt(b.x + b.w * 0.25) + ' ' + fmt(y1 + amp) + ', ' + fmt(b.x + b.w * 0.5) + ' ' + fmt(y1) +
+			' C ' + fmt(b.x + b.w * 0.75) + ' ' + fmt(y1 - amp) + ', ' + fmt(b.x + b.w * 0.75) + ' ' + fmt(y1 + amp) + ', ' + fmt(b.x + b.w) + ' ' + fmt(y1) +
+			' L ' + fmt(b.x + b.w) + ' ' + fmt(y2) +
+			' C ' + fmt(b.x + b.w * 0.75) + ' ' + fmt(y2 + amp) + ', ' + fmt(b.x + b.w * 0.75) + ' ' + fmt(y2 - amp) + ', ' + fmt(b.x + b.w * 0.5) + ' ' + fmt(y2) +
+			' C ' + fmt(b.x + b.w * 0.25) + ' ' + fmt(y2 + amp) + ', ' + fmt(b.x + b.w * 0.25) + ' ' + fmt(y2 - amp) + ', ' + fmt(b.x) + ' ' + fmt(y2) + ' Z';
+	}
+
+	function storedDataPath(b) {
+		const curve = Math.min(b.w * 0.18, 20);
+		return 'M ' + fmt(b.x + curve) + ' ' + fmt(b.y) +
+			' L ' + fmt(b.x + b.w) + ' ' + fmt(b.y) +
+			' C ' + fmt(b.x + b.w - curve) + ' ' + fmt(b.y + b.h * 0.3) + ', ' + fmt(b.x + b.w - curve) + ' ' + fmt(b.y + b.h * 0.7) + ', ' + fmt(b.x + b.w) + ' ' + fmt(b.y + b.h) +
+			' L ' + fmt(b.x + curve) + ' ' + fmt(b.y + b.h) +
+			' C ' + fmt(b.x) + ' ' + fmt(b.y + b.h * 0.7) + ', ' + fmt(b.x) + ' ' + fmt(b.y + b.h * 0.3) + ', ' + fmt(b.x + curve) + ' ' + fmt(b.y) + ' Z';
+	}
+
+	function tablePieces(b) {
+		return [
+			{ type: 'rect', x: b.x, y: b.y, w: b.w, h: b.h },
+			{ type: 'line', x1: b.x, y1: b.y + b.h * 0.28, x2: b.x + b.w, y2: b.y + b.h * 0.28 },
+			{ type: 'line', x1: b.x + b.w * 0.5, y1: b.y, x2: b.x + b.w * 0.5, y2: b.y + b.h },
+		];
+	}
+
+	function swimlanePieces(b) {
+		return [
+			{ type: 'rect', x: b.x, y: b.y, w: b.w, h: b.h },
+			{ type: 'line', x1: b.x, y1: b.y + b.h * 0.22, x2: b.x + b.w, y2: b.y + b.h * 0.22 },
+		];
 	}
 
 	// ---- flowchart ----------------------------------------------------
@@ -508,14 +548,15 @@
 			case 'ellipse':                return { kind: 'compound', pieces: [
 				{ type: 'ellipse', cx: box.x + box.w / 2, cy: box.y + box.h / 2, rx: box.w / 2, ry: box.h / 2 },
 			] };
-			case 'roundedRectangle':       return { kind: 'rect', x: box.x, y: box.y, w: box.w, h: box.h, rx: roundedRectangleRx(box) };
+			case 'roundedRectangle':
 			case 'triangle':               return { kind: 'polygon', points: trianglePoints(box) };
 			case 'diamond':                return { kind: 'polygon', points: diamondPoints(box) };
 			case 'parallelogram':          return { kind: 'polygon', points: parallelogramPoints(box) };
 			case 'trapezoid':              return { kind: 'polygon', points: trapezoidPoints(box) };
 			case 'hexagon':                return { kind: 'polygon', points: hexagonPoints(box) };
-			case 'pentagon':               return { kind: 'polygon', points: pentagonPoints(box) };
 			case 'star':                   return { kind: 'polygon', points: starPoints(box) };
+			case 'heart':                  return { kind: 'path', d: heartPath(box) };
+			case 'envelope':               return { kind: 'compound', pieces: envelopePieces(box) };
 			// flowchart
 			case 'terminator':             return { kind: 'rect', x: box.x, y: box.y, w: box.w, h: box.h, rx: terminatorRx(box) };
 			case 'document':               return { kind: 'path', d: documentPath(box) };
@@ -524,6 +565,10 @@
 			case 'predefinedProcess':      return { kind: 'path', d: predefinedProcessPath(box) };
 			case 'delay':                  return { kind: 'path', d: delayPath(box) };
 			case 'offPageConnector':       return { kind: 'polygon', points: offPageConnectorPoints(box) };
+			case 'punchedTape':            return { kind: 'path', d: punchedTapePath(box) };
+			case 'storedData':             return { kind: 'path', d: storedDataPath(box) };
+			case 'table':                  return { kind: 'compound', pieces: tablePieces(box) };
+			case 'swimlane':               return { kind: 'compound', pieces: swimlanePieces(box) };
 			// architecture
 			case 'cylinder':               return { kind: 'cylinder', body: cylinderBodyPath(box), top: cylinderTopEllipse(box) };
 			case 'cloud':                  return { kind: 'path', d: cloudPath(box) };

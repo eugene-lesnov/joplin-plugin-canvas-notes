@@ -363,20 +363,6 @@ export function queuePieces(b: Box): ShapePiece[] {
 
 // ---- additional basic shapes ---------------------------------------------
 
-/** Regular pentagon inscribed into the bounding box, point at the top. */
-export function pentagonPoints(b: Box): string {
-	const cx = b.x + b.w / 2;
-	const cy = b.y + b.h / 2;
-	const rx = b.w / 2;
-	const ry = b.h / 2;
-	const coords: number[][] = [];
-	for (let i = 0; i < 5; i++) {
-		const angle = -Math.PI / 2 + i * 2 * Math.PI / 5;
-		coords.push([cx + rx * Math.cos(angle), cy + ry * Math.sin(angle)]);
-	}
-	return pts(coords);
-}
-
 /** Trapezoid (isoceles) with the longer side at the bottom. */
 export function trapezoidPoints(b: Box): string {
 	const inset = Math.min(b.w * 0.2, b.h * 0.5);
@@ -386,6 +372,75 @@ export function trapezoidPoints(b: Box): string {
 		[b.x + b.w, b.y + b.h],
 		[b.x, b.y + b.h],
 	]);
+}
+
+/** Heart icon as one scalable Bezier path. */
+export function heartPath(b: Box): string {
+	const x = b.x, y = b.y, w = b.w, h = b.h;
+	return (
+		`M ${num(x + w * 0.5)} ${num(y + h * 0.88)}` +
+		` C ${num(x + w * 0.08)} ${num(y + h * 0.58)}, ${num(x)} ${num(y + h * 0.28)}, ${num(x + w * 0.22)} ${num(y + h * 0.12)}` +
+		` C ${num(x + w * 0.36)} ${num(y)}, ${num(x + w * 0.5)} ${num(y + h * 0.12)}, ${num(x + w * 0.5)} ${num(y + h * 0.28)}` +
+		` C ${num(x + w * 0.5)} ${num(y + h * 0.12)}, ${num(x + w * 0.64)} ${num(y)}, ${num(x + w * 0.78)} ${num(y + h * 0.12)}` +
+		` C ${num(x + w)} ${num(y + h * 0.28)}, ${num(x + w * 0.92)} ${num(y + h * 0.58)}, ${num(x + w * 0.5)} ${num(y + h * 0.88)} Z`
+	);
+}
+
+/** Envelope with a rectangular body and crossing flap lines. */
+export function envelopePieces(b: Box): ShapePiece[] {
+	return [
+		{ type: 'rect', x: b.x, y: b.y, w: b.w, h: b.h, rx: 2 },
+		{ type: 'line', x1: b.x, y1: b.y, x2: b.x + b.w / 2, y2: b.y + b.h * 0.55 },
+		{ type: 'line', x1: b.x + b.w, y1: b.y, x2: b.x + b.w / 2, y2: b.y + b.h * 0.55 },
+		{ type: 'line', x1: b.x, y1: b.y + b.h, x2: b.x + b.w * 0.4, y2: b.y + b.h * 0.45 },
+		{ type: 'line', x1: b.x + b.w, y1: b.y + b.h, x2: b.x + b.w * 0.6, y2: b.y + b.h * 0.45 },
+	];
+}
+
+/** Punched tape with wavy top and bottom edges. */
+export function punchedTapePath(b: Box): string {
+	const amp = Math.min(b.h * 0.12, 10);
+	const y1 = b.y + amp;
+	const y2 = b.y + b.h - amp;
+	return (
+		`M ${num(b.x)} ${num(y1)}` +
+		` C ${num(b.x + b.w * 0.25)} ${num(y1 - amp)}, ${num(b.x + b.w * 0.25)} ${num(y1 + amp)}, ${num(b.x + b.w * 0.5)} ${num(y1)}` +
+		` C ${num(b.x + b.w * 0.75)} ${num(y1 - amp)}, ${num(b.x + b.w * 0.75)} ${num(y1 + amp)}, ${num(b.x + b.w)} ${num(y1)}` +
+		` L ${num(b.x + b.w)} ${num(y2)}` +
+		` C ${num(b.x + b.w * 0.75)} ${num(y2 + amp)}, ${num(b.x + b.w * 0.75)} ${num(y2 - amp)}, ${num(b.x + b.w * 0.5)} ${num(y2)}` +
+		` C ${num(b.x + b.w * 0.25)} ${num(y2 + amp)}, ${num(b.x + b.w * 0.25)} ${num(y2 - amp)}, ${num(b.x)} ${num(y2)}` +
+		` Z`
+	);
+}
+
+/** Stored data: rectangle with concave vertical sides. */
+export function storedDataPath(b: Box): string {
+	const curve = Math.min(b.w * 0.18, 20);
+	return (
+		`M ${num(b.x + curve)} ${num(b.y)}` +
+		` L ${num(b.x + b.w)} ${num(b.y)}` +
+		` C ${num(b.x + b.w - curve)} ${num(b.y + b.h * 0.3)}, ${num(b.x + b.w - curve)} ${num(b.y + b.h * 0.7)}, ${num(b.x + b.w)} ${num(b.y + b.h)}` +
+		` L ${num(b.x + curve)} ${num(b.y + b.h)}` +
+		` C ${num(b.x)} ${num(b.y + b.h * 0.7)}, ${num(b.x)} ${num(b.y + b.h * 0.3)}, ${num(b.x + curve)} ${num(b.y)}` +
+		` Z`
+	);
+}
+
+/** Table grid with one header row and two columns. */
+export function tablePieces(b: Box): ShapePiece[] {
+	return [
+		{ type: 'rect', x: b.x, y: b.y, w: b.w, h: b.h },
+		{ type: 'line', x1: b.x, y1: b.y + b.h * 0.28, x2: b.x + b.w, y2: b.y + b.h * 0.28 },
+		{ type: 'line', x1: b.x + b.w * 0.5, y1: b.y, x2: b.x + b.w * 0.5, y2: b.y + b.h },
+	];
+}
+
+/** Swimlane container with a header band. */
+export function swimlanePieces(b: Box): ShapePiece[] {
+	return [
+		{ type: 'rect', x: b.x, y: b.y, w: b.w, h: b.h },
+		{ type: 'line', x1: b.x, y1: b.y + b.h * 0.22, x2: b.x + b.w, y2: b.y + b.h * 0.22 },
+	];
 }
 
 // ---- additional flowchart shapes ----------------------------------------
@@ -671,14 +726,15 @@ export function shapeDraw(kind: ShapeType, b: Box): ShapeDraw {
 		case 'ellipse':           return { kind: 'compound', pieces: [
 			{ type: 'ellipse', cx: b.x + b.w / 2, cy: b.y + b.h / 2, rx: b.w / 2, ry: b.h / 2 },
 		] };
-		case 'roundedRectangle':  return { kind: 'rect', x: b.x, y: b.y, w: b.w, h: b.h, rx: roundedRectangleRx(b) };
+		case 'roundedRectangle':
 		case 'triangle':          return { kind: 'polygon', points: trianglePoints(b) };
 		case 'diamond':           return { kind: 'polygon', points: diamondPoints(b) };
 		case 'parallelogram':     return { kind: 'polygon', points: parallelogramPoints(b) };
 		case 'trapezoid':         return { kind: 'polygon', points: trapezoidPoints(b) };
 		case 'hexagon':           return { kind: 'polygon', points: hexagonPoints(b) };
-		case 'pentagon':          return { kind: 'polygon', points: pentagonPoints(b) };
 		case 'star':              return { kind: 'polygon', points: starPoints(b) };
+		case 'heart':             return { kind: 'path', d: heartPath(b) };
+		case 'envelope':          return { kind: 'compound', pieces: envelopePieces(b) };
 		// ---- flowchart ----
 		case 'terminator':        return { kind: 'rect', x: b.x, y: b.y, w: b.w, h: b.h, rx: terminatorRx(b) };
 		case 'document':          return { kind: 'path', d: documentPath(b) };
@@ -687,6 +743,10 @@ export function shapeDraw(kind: ShapeType, b: Box): ShapeDraw {
 		case 'predefinedProcess': return { kind: 'path', d: predefinedProcessPath(b) };
 		case 'delay':             return { kind: 'path', d: delayPath(b) };
 		case 'offPageConnector':  return { kind: 'polygon', points: offPageConnectorPoints(b) };
+		case 'punchedTape':       return { kind: 'path', d: punchedTapePath(b) };
+		case 'storedData':        return { kind: 'path', d: storedDataPath(b) };
+		case 'table':             return { kind: 'compound', pieces: tablePieces(b) };
+		case 'swimlane':          return { kind: 'compound', pieces: swimlanePieces(b) };
 		// ---- architecture ----
 		case 'cylinder':          return { kind: 'cylinder', body: cylinderBodyPath(b), top: cylinderTopEllipse(b) };
 		case 'cloud':             return { kind: 'path', d: cloudPath(b) };

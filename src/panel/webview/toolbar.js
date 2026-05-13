@@ -228,52 +228,59 @@
 		{ id: 'select', group: 'select', kind: 'select',
 		  labelKey: 'toolSelect', fallback: 'Select', icon: ICON_SELECT },
 
-		// Shapes - basic primitives.
-		shape('rectangle',        'rectangle',        'basic', 'toolRectangle',        'Rectangle'),
-		shape('roundedRectangle', 'roundedRectangle', 'basic', 'toolRoundedRectangle', 'Rounded rectangle'),
-		shape('ellipse',          'ellipse',          'basic', 'toolEllipse',          'Ellipse', { squareIcon: true }),
-		shape('triangle',         'triangle',         'basic', 'toolTriangle',         'Triangle', { squareIcon: true }),
-		shape('diamond',          'diamond',          'basic', 'toolDiamond',          'Diamond', { squareIcon: true }),
-		shape('parallelogram',    'parallelogram',    'basic', 'toolParallelogram',    'Parallelogram'),
-		shape('trapezoid',        'trapezoid',        'basic', 'toolTrapezoid',        'Trapezoid'),
-		shape('hexagon',          'hexagon',          'basic', 'toolHexagon',          'Hexagon'),
-		shape('pentagon',         'pentagon',         'basic', 'toolPentagon',         'Pentagon', { squareIcon: true }),
-		shape('star',             'star',             'basic', 'toolStar',             'Star', { squareIcon: true }),
+		// Basic / General.
+		shape('rectangle',              'rectangle',            'basic', 'toolRectangle',              'Rectangle'),
+		shape('roundedRectangle',       'roundedRectangle',     'basic', 'toolRoundedRectangle',       'Rounded rectangle'),
+		shape('ellipse',                'ellipse',              'basic', 'toolEllipse',                'Ellipse', { squareIcon: true }),
+		shape('triangle',               'triangle',             'basic', 'toolTriangle',               'Triangle', { squareIcon: true }),
+		shape('diamond',                'diamond',              'basic', 'toolDiamond',                'Rhombus / Diamond', { squareIcon: true }),
+		shape('hexagon',                'hexagon',              'basic', 'toolHexagon',                'Hexagon'),
+		shape('parallelogram',          'parallelogram',        'basic', 'toolParallelogram',          'Parallelogram'),
+		shape('trapezoid',              'trapezoid',            'basic', 'toolTrapezoid',              'Trapezoid'),
+		shape('cloud',                  'cloud',                'basic', 'toolCloud',                  'Cloud'),
+		shape('cylinder',               'cylinder',             'basic', 'toolCylinder',               'Cylinder / Database'),
+		shape('star',                   'star',                 'basic', 'toolStar',                   'Star', { squareIcon: true }),
+		shape('heart',                  'heart',                'basic', 'toolHeart',                  'Heart', { squareIcon: true }),
+		shape('speechBubble',           'callout',              'basic', 'toolSpeechBubble',           'Speech bubble / Callout'),
+		shape('noteStickyNote',         'stickyNote',           'basic', 'toolStickyNote',             'Note / Sticky note'),
+		shape('folder',                 'folder',               'basic', 'toolFolder',                 'Folder'),
+		shape('messageEnvelope',        'envelope',             'basic', 'toolMessageEnvelope',        'Message / Envelope'),
 
-		// Shapes - flowchart.
-		shape('terminator',       'terminator',       'flowchart', 'toolTerminator',       'Terminator (start / end)'),
-		// Aliases: process, decision, data point at existing primitives.
-		shape('flowProcess',      'rectangle',        'flowchart', 'toolFlowProcess',      'Process'),
-		shape('flowDecision',     'diamond',          'flowchart', 'toolFlowDecision',     'Decision', { squareIcon: true }),
-		shape('flowData',         'parallelogram',    'flowchart', 'toolFlowData',         'Data'),
-		shape('document',         'document',         'flowchart', 'toolDocument',         'Document'),
-		shape('multipleDocuments','multipleDocuments','flowchart', 'toolMultipleDocuments','Multiple documents'),
-		shape('manualInput',      'manualInput',      'flowchart', 'toolManualInput',      'Manual input'),
-		shape('predefinedProcess','predefinedProcess','flowchart', 'toolPredefinedProcess','Predefined process'),
-		shape('delay',            'delay',            'flowchart', 'toolDelay',            'Delay'),
-		shape('offPageConnector', 'offPageConnector', 'flowchart', 'toolOffPageConnector', 'Off-page connector'),
+		// Flowchart.
+		shape('predefinedProcess',      'predefinedProcess',    'flowchart', 'toolPredefinedProcess',      'Predefined process'),
+		shape('document',               'document',             'flowchart', 'toolDocument',               'Document'),
+		shape('multipleDocuments',      'multipleDocuments',    'flowchart', 'toolMultipleDocuments',      'Multiple documents'),
+		shape('terminator',             'terminator',           'flowchart', 'toolTerminator',             'Terminator / Start-End'),
+		shape('manualInput',            'manualInput',          'flowchart', 'toolManualInput',            'Manual input'),
+		shape('offPageConnector',       'offPageConnector',     'flowchart', 'toolOffPageConnector',       'Off-page connector'),
+		shape('delay',                  'delay',                'flowchart', 'toolDelay',                  'Delay'),
 
-		// Shapes - architecture (servers, services, devices, networking).
-		shape('cylinder',     'cylinder',     'architecture', 'toolCylinder',     'Cylinder / Database'),
-		shape('queue',        'queue',        'architecture', 'toolQueue',        'Queue'),
-		shape('server',       'server',       'architecture', 'toolServer',       'Server / node'),
-		shape('cloud',        'cloud',        'architecture', 'toolCloud',        'Cloud'),
-		shape('actor',        'actor',        'architecture', 'toolActor',        'Actor', { squareIcon: true }),
-		shape('browser',      'browser',      'architecture', 'toolBrowser',      'Browser'),
-		shape('mobile',       'mobile',       'architecture', 'toolMobile',       'Mobile', { squareIcon: true }),
-		shape('laptop',       'laptop',       'architecture', 'toolLaptop',       'Laptop'),
-		shape('desktop',      'desktop',      'architecture', 'toolDesktop',      'Desktop', { squareIcon: true }),
-		shape('container',    'container',    'architecture', 'toolContainer',    'Container'),
-		shape('gear',         'gear',         'architecture', 'toolGear',         'Gear / Service', { squareIcon: true }),
-		shape('loadBalancer', 'loadBalancer', 'architecture', 'toolLoadBalancer', 'Load balancer', { squareIcon: true }),
-		shape('firewall',     'firewall',     'architecture', 'toolFirewall',     'Firewall'),
-		shape('lock',         'lock',         'architecture', 'toolLock',         'Lock', { squareIcon: true }),
-		shape('folder',       'folder',       'architecture', 'toolFolder',       'Folder'),
+		// Containers.
+		shape('container',              'container',            'containers', 'toolContainer',             'Container'),
+		shape('swimlane',               'swimlane',             'containers', 'toolSwimlane',              'Swimlane'),
+		shape('table',                  'table',                'containers', 'toolTable',                 'Table'),
 
-		// Shapes - notes / annotations.
-		shape('cardShape',    'card',       'notes', 'toolCardShape',    'Card'),
-		shape('callout',      'callout',    'notes', 'toolCallout',      'Callout'),
-		shape('uiStickyNote', 'stickyNote', 'notes', 'toolUiStickyNote', 'Sticky note'),
+		// Data / Documents.
+		shape('storedData',             'storedData',           'dataDocuments', 'toolStoredData',            'Stored data'),
+		shape('tape',                   'punchedTape',          'dataDocuments', 'toolTape',                  'Tape'),
+
+		// Architecture / Infrastructure.
+		shape('server',                 'server',               'architecture', 'toolServer',                 'Server / node'),
+		shape('queue',                  'queue',                'architecture', 'toolQueue',                  'Queue'),
+		shape('actor',                  'actor',                'architecture', 'toolActor',                  'Actor', { squareIcon: true }),
+		shape('gear',                   'gear',                 'architecture', 'toolGear',                   'Gear / Service', { squareIcon: true }),
+		shape('loadBalancer',           'loadBalancer',         'architecture', 'toolLoadBalancer',           'Load balancer', { squareIcon: true }),
+		shape('firewall',               'firewall',             'architecture', 'toolFirewall',               'Firewall'),
+		shape('lock',                   'lock',                 'architecture', 'toolLock',                   'Lock', { squareIcon: true }),
+
+		// Devices.
+		shape('browser',                'browser',              'devices', 'toolBrowser',                'Browser'),
+		shape('desktop',                'desktop',              'devices', 'toolDesktop',                'Desktop', { squareIcon: true }),
+		shape('laptop',                 'laptop',               'devices', 'toolLaptop',                 'Laptop'),
+		shape('mobile',                 'mobile',               'devices', 'toolMobile',                 'Mobile', { squareIcon: true }),
+
+		// Notes / annotations.
+		shape('cardShape',              'card',                 'notes', 'toolCardShape',              'Card'),
 
 		// Lines - basic.
 		lineTool('line',         'basic', 'toolLine',         'Solid line',         ICON_LINE,
@@ -331,14 +338,17 @@
 	};
 
 	const SUBGROUP_LABEL = {
-		basic:        { key: 'toolSubgroupBasic',        fallback: 'Basic' },
-		flowchart:    { key: 'toolSubgroupFlowchart',    fallback: 'Flowchart' },
-		architecture: { key: 'toolSubgroupArchitecture', fallback: 'Architecture' },
-		notes:        { key: 'toolSubgroupNotes',        fallback: 'Notes' },
-		uml:          { key: 'toolSubgroupUml',          fallback: 'UML connectors' },
+		basic:         { key: 'toolSubgroupBasic',         fallback: 'Basic / General' },
+		flowchart:     { key: 'toolSubgroupFlowchart',     fallback: 'Flowchart' },
+		containers:    { key: 'toolSubgroupContainers',    fallback: 'Containers' },
+		dataDocuments: { key: 'toolSubgroupDataDocuments', fallback: 'Data / Documents' },
+		architecture:  { key: 'toolSubgroupArchitecture',  fallback: 'Architecture' },
+		devices:       { key: 'toolSubgroupDevices',       fallback: 'Devices' },
+		notes:         { key: 'toolSubgroupNotes',         fallback: 'Notes' },
+		uml:           { key: 'toolSubgroupUml',           fallback: 'UML connectors' },
 	};
 
-	const SUBGROUP_ORDER_SHAPES = ['basic', 'flowchart', 'architecture', 'notes'];
+	const SUBGROUP_ORDER_SHAPES = ['basic', 'flowchart', 'containers', 'dataDocuments', 'architecture', 'devices', 'notes'];
 	const SUBGROUP_ORDER_LINES = ['basic', 'uml'];
 
 	// ---- DOM helpers ----------------------------------------------------

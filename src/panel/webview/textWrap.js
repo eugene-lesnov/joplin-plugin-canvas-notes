@@ -81,20 +81,19 @@
 	}
 
 	const SHAPE_LABEL_PADDING = 4;
+	const SHAPE_LABEL_EXTERNAL_GAP = 6;
 
 	/**
-	 * Computes positioning for a shape-embedded label. Mirror of
+	 * Computes positioning for a shape label below the shape box. Mirror of
 	 * layoutShapeLabel in src/canvas/textWrap.ts so the in-app view
 	 * matches the exported SVG line by line.
 	 */
 	function layoutShapeLabel(text, box, fontSize, align, verticalAlign) {
-		const innerW = Math.max(1, box.w - SHAPE_LABEL_PADDING * 2);
-		const maxChars = charsPerWidth(innerW, fontSize);
+		void verticalAlign;
+		const labelW = Math.max(1, box.w - SHAPE_LABEL_PADDING * 2);
+		const maxChars = charsPerWidth(labelW, fontSize);
 		const lines = wrapByWidth(text, maxChars);
 		const safeLines = lines.length > 0 ? lines : [''];
-
-		const lineHeight = fontSize * TEXT_LINE_HEIGHT_RATIO;
-		const totalHeight = safeLines.length * lineHeight;
 
 		let textAnchor;
 		let x;
@@ -109,15 +108,7 @@
 			x = box.x + box.w / 2;
 		}
 
-		let firstBaselineY;
-		if (verticalAlign === 'top') {
-			firstBaselineY = box.y + SHAPE_LABEL_PADDING + fontSize;
-		} else if (verticalAlign === 'bottom') {
-			firstBaselineY = box.y + box.h - SHAPE_LABEL_PADDING - totalHeight + fontSize;
-		} else {
-			firstBaselineY = box.y + (box.h - totalHeight) / 2 + fontSize;
-		}
-
+		const firstBaselineY = box.y + box.h + SHAPE_LABEL_EXTERNAL_GAP + fontSize;
 		return { lines: safeLines, textAnchor, x, firstBaselineY };
 	}
 
@@ -146,6 +137,7 @@
 		clampTitle,
 		clampTitleToWidth,
 		SHAPE_LABEL_PADDING,
+		SHAPE_LABEL_EXTERNAL_GAP,
 		TEXT_LINE_HEIGHT_RATIO,
 	};
 })();
