@@ -310,8 +310,8 @@ export interface NoteCardElement extends BaseElement {
 	h: number;
 	noteId: string;
 	title: string;
-	/** Short body preview shown under the title. */
-	preview?: string;
+	/** Tag titles attached to the note. Refreshed on add / validate. */
+	tags?: string[];
 	/** True if the linked note was missing on last validation. */
 	broken?: boolean;
 }
@@ -326,8 +326,8 @@ export interface TodoCardElement extends BaseElement {
 	noteId: string;
 	title: string;
 	completed: boolean;
-	/** Short body preview shown under the title. */
-	preview?: string;
+	/** Tag titles attached to the note. Refreshed on add / validate. */
+	tags?: string[];
 	/** True if the linked todo was missing on last validation. */
 	broken?: boolean;
 }

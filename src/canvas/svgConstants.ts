@@ -39,7 +39,6 @@ export const CARD_TITLE_HEIGHT = 28;
 export const CARD_TITLE_PAD_X = 10;
 export const CARD_TITLE_FONT_SIZE = 14;
 export const CARD_BODY_FONT_SIZE = 12;
-export const CARD_TITLE_MAX_CHARS = 38;
 
 // ---- viewBox / canvas size ------------------------------------------------
 

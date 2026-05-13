@@ -13,6 +13,7 @@ import { getNoteSummaryById, searchNotes } from '../joplin/searchApi';
 import {
 	CheckLinkedNotesResponse,
 	NoteLinkStatus,
+	NoteSummaryResponse,
 	OperationResult,
 	SearchNotesResponse,
 	WebviewToBackend,
@@ -85,11 +86,27 @@ async function dispatch(
 						title: s.title,
 						isTodo: s.isTodo,
 						todoCompleted: s.todoCompleted,
-						preview: s.preview,
+						tags: s.tags,
 					};
 				}),
 			);
 			const response: CheckLinkedNotesResponse = { ok: true, statuses };
+			return response;
+		}
+
+		case 'getNoteSummary': {
+			const s = await getNoteSummaryById(message.noteId);
+			if (!s) return { ok: false, error: strings.errorLinkedNoteMissing };
+			const response: NoteSummaryResponse = {
+				ok: true,
+				summary: {
+					id: s.id,
+					title: s.title,
+					isTodo: s.isTodo,
+					todoCompleted: s.todoCompleted,
+					tags: s.tags,
+				},
+			};
 			return response;
 		}
 

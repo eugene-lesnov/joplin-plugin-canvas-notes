@@ -2,16 +2,14 @@
  * Note/todo search for the Canvas Editor card picker.
  *
  * Uses Joplin's `search` endpoint with the standard query syntax.
- * In addition to the title-only search performed by the picker itself
- * (the title: filter is built on the webview side), we always request
- * the `body` field so we can produce a short preview snippet for cards.
+ * The title: filter is built on the webview side; here we only fetch
+ * the metadata required to render a card (id, title, todo state).
  */
 
 import joplin from 'api';
 
-const SEARCH_FIELDS = ['id', 'title', 'is_todo', 'todo_completed', 'body'];
+const SEARCH_FIELDS = ['id', 'title', 'is_todo', 'todo_completed'];
 const DEFAULT_LIMIT = 20;
-const PREVIEW_MAX_CHARS = 160;
 
 /** Public, lean shape exposed to the rest of the plugin/webview. */
 export interface NoteSearchItem {
@@ -19,8 +17,11 @@ export interface NoteSearchItem {
 	title: string;
 	isTodo: boolean;
 	todoCompleted: boolean;
-	/** Short, plain-text snippet of the body. Empty string when no body. */
-	preview: string;
+}
+
+/** Full summary of a note used to materialize a canvas card. */
+export interface NoteFullSummary extends NoteSearchItem {
+	tags: string[];
 }
 
 interface RawSearchItem {
@@ -28,7 +29,11 @@ interface RawSearchItem {
 	title: string;
 	is_todo: number;
 	todo_completed: number;
-	body?: string;
+}
+
+interface RawTagItem {
+	id: string;
+	title: string;
 }
 
 /**
@@ -55,20 +60,49 @@ export async function searchNotes(
 
 /**
  * Returns a brief summary of a note by id, or null when missing.
- * Used to detect broken card links and to refresh card previews.
+ * Used to detect broken card links and to refresh card metadata.
+ * Tags are fetched in a separate request because Joplin exposes them
+ * via a sub-resource (`/notes/:id/tags`).
  */
-export async function getNoteSummaryById(noteId: string): Promise<NoteSearchItem | null> {
+export async function getNoteSummaryById(noteId: string): Promise<NoteFullSummary | null> {
 	if (!noteId) return null;
 	try {
 		const raw: RawSearchItem = await joplin.data.get(['notes', noteId], {
 			fields: SEARCH_FIELDS,
 		});
 		if (!raw || !raw.id) return null;
-		return toItem(raw);
+		const tags = await fetchNoteTags(noteId);
+		return { ...toItem(raw), tags };
 	} catch {
 		// Joplin returns 404 for missing notes; treat any error as "missing".
 		return null;
 	}
+}
+
+/**
+ * Returns the list of tag titles attached to the note. Pages through
+ * Joplin's paginated response so notes with many tags are fully covered.
+ * On any error returns an empty list rather than failing the whole card
+ * refresh.
+ */
+async function fetchNoteTags(noteId: string): Promise<string[]> {
+	const titles: string[] = [];
+	try {
+		let page = 1;
+		for (;;) {
+			const response = await joplin.data.get(['notes', noteId, 'tags'], {
+				fields: ['id', 'title'],
+				page,
+			});
+			const items: RawTagItem[] = (response && response.items) || [];
+			for (const t of items) if (t && t.title) titles.push(t.title);
+			if (!response || !response.has_more) break;
+			page += 1;
+		}
+	} catch {
+		return titles;
+	}
+	return titles;
 }
 
 function toItem(raw: RawSearchItem): NoteSearchItem {
@@ -77,39 +111,5 @@ function toItem(raw: RawSearchItem): NoteSearchItem {
 		title: raw.title || '(untitled)',
 		isTodo: !!raw.is_todo,
 		todoCompleted: !!raw.todo_completed,
-		preview: buildPreview(raw.body),
 	};
-}
-
-/**
- * Reduces a Joplin note body to a one-paragraph plain-text snippet.
- * Strips the most common markdown noise so the snippet looks like
- * regular text. We don't aim for perfect markdown rendering here.
- */
-function buildPreview(body: string | undefined): string {
-	if (!body) return '';
-	const flat = body
-		// Remove fenced code blocks.
-		.replace(/```[\s\S]*?```/g, ' ')
-		// Inline code.
-		.replace(/`[^`]*`/g, ' ')
-		// Images and links: keep the visible text.
-		.replace(/!\[[^\]]*]\([^)]*\)/g, ' ')
-		.replace(/\[([^\]]+)]\([^)]*\)/g, '$1')
-		// HTML comments (canvas marker etc.).
-		.replace(/<!--[\s\S]*?-->/g, ' ')
-		// HTML tags.
-		.replace(/<[^>]+>/g, ' ')
-		// Heading markers and list bullets at line start.
-		.replace(/^[ \t]*#+\s+/gm, '')
-		.replace(/^[ \t]*[-*+]\s+/gm, '')
-		.replace(/^[ \t]*\d+\.\s+/gm, '')
-		// Emphasis markers.
-		.replace(/[*_~]+/g, '')
-		// Whitespace cleanup.
-		.replace(/\s+/g, ' ')
-		.trim();
-
-	if (flat.length <= PREVIEW_MAX_CHARS) return flat;
-	return `${flat.slice(0, PREVIEW_MAX_CHARS - 1).trimEnd()}\u2026`;
 }

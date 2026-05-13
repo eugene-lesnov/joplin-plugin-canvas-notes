@@ -161,7 +161,7 @@
 			x, y, w: C.DEFAULT_CARD_W, h: C.DEFAULT_CARD_H,
 			noteId: summary.id,
 			title: summary.title || '(untitled)',
-			preview: summary.preview || '',
+			tags: Array.isArray(summary.tags) ? summary.tags.slice() : [],
 		};
 		if (summary.isTodo) {
 			return Object.assign({}, base, {

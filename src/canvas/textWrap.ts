@@ -1,9 +1,8 @@
 /**
  * Greedy word-wrap with character-level fallback for very long words.
  *
- * Used for note/todo card body previews. The same algorithm is mirrored
- * (in JS) inside the webview renderer so the in-app preview matches the
- * exported SVG exactly.
+ * The same algorithm is mirrored (in JS) inside the webview renderer so
+ * the in-app text rendering matches the exported SVG exactly.
  */
 
 import { stripInvalidXmlChars } from './xmlEscape';
@@ -16,53 +15,14 @@ export function clampTitle(title: string, max: number): string {
 }
 
 /**
- * Wraps `text` into at most `maxLines` lines whose visible length never
- * exceeds `maxChars`. The last line is suffixed with an ellipsis when
- * the text overflows.
+ * Trims a title-like string so it fits inside `width` pixels at the
+ * given fontSize. Uses the same character-budget heuristic as the rest
+ * of the layout pipeline (charsPerWidth), so the in-app view and the
+ * exported SVG always agree.
  */
-export function wrapText(text: string, maxChars: number, maxLines: number): string[] {
-	const result: string[] = [];
-	const words = text.split(/\s+/);
-	let current = '';
-
-	for (const word of words) {
-		if (!word) continue;
-		if (word.length > maxChars) {
-			if (current) {
-				result.push(current);
-				current = '';
-				if (result.length >= maxLines) break;
-			}
-			let rest = word;
-			while (rest.length > maxChars && result.length < maxLines) {
-				result.push(rest.slice(0, maxChars));
-				rest = rest.slice(maxChars);
-			}
-			if (result.length >= maxLines) break;
-			current = rest;
-			continue;
-		}
-		const candidate = current ? `${current} ${word}` : word;
-		if (candidate.length <= maxChars) {
-			current = candidate;
-		} else {
-			result.push(current);
-			if (result.length >= maxLines) break;
-			current = word;
-		}
-	}
-
-	if (result.length < maxLines && current) result.push(current);
-
-	if (result.length === maxLines) {
-		const joined = result.join(' ');
-		if (joined.length < text.length) {
-			const last = result[result.length - 1];
-			const trimmed = last.length > maxChars - 1 ? last.slice(0, maxChars - 1) : last;
-			result[result.length - 1] = `${trimmed.trimEnd()}\u2026`;
-		}
-	}
-	return result;
+export function clampTitleToWidth(title: string, width: number, fontSize: number): string {
+	const max = charsPerWidth(width, fontSize);
+	return clampTitle(title, Math.max(1, max));
 }
 
 /**
@@ -100,13 +60,13 @@ function wrapSingleLine(line: string, maxChars: number): string[] {
 }
 
 /**
- * Wraps `text` by character budget. Unlike wrapText() this variant:
+ * Wraps `text` by character budget:
  *   - preserves explicit newlines (split by \n) - each becomes a hard break;
  *   - keeps empty lines as empty entries (vertical spacing);
  *   - never truncates and never appends an ellipsis.
  *
- * Used by TextElement rendering on both the webview and serializer sides
- * so the in-app preview matches the exported SVG line by line.
+ * Used by TextElement and embedded label rendering on both the webview
+ * and serializer sides so the in-app view matches the exported SVG.
  */
 export function wrapByWidth(text: string, maxChars: number): string[] {
 	if (!text) return [];
@@ -170,7 +130,7 @@ export const SHAPE_LABEL_PADDING = 4;
  * sized boxes collapse to a single line at the box origin.
  *
  * Sharing this helper between the webview renderer and the SVG
- * serializer keeps the in-app preview and exported SVG visually
+ * serializer keeps the in-app view and exported SVG visually
  * identical.
  */
 export function layoutShapeLabel(

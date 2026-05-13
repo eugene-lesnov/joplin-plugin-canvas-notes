@@ -21,6 +21,11 @@
 	const MIN_TEXT_WIDTH = 40;
 	const MIN_TEXT_HEIGHT = 24;
 
+	// Card-specific minimums. Sized so the body row (icon + type label) and
+	// a single tag row never overlap the title bar.
+	const MIN_CARD_WIDTH = (C && C.CARD_MIN_WIDTH) || 160;
+	const MIN_CARD_HEIGHT = (C && C.CARD_MIN_HEIGHT) || 84;
+
 	function clampMin(v) { return Math.max(MIN_SHAPE_SIZE, v); }
 
 	/** Returns a copy of the element shifted by (dx, dy) in document space. */
@@ -54,19 +59,22 @@
 	/**
 	 * Free-form box resize: the opposite edge stays fixed and the dragged
 	 * edge/corner follows the pointer. Works for rectangles, cards, and
-	 * the legacy 'square' type.
+	 * the legacy 'square' type. Per-type minimum size can be overridden
+	 * via {minW, minH} - defaults to MIN_SHAPE_SIZE for both axes.
 	 */
-	function resizeBox(initial, handle, p) {
+	function resizeBox(initial, handle, p, opts) {
+		const minW = (opts && opts.minW) || MIN_SHAPE_SIZE;
+		const minH = (opts && opts.minH) || MIN_SHAPE_SIZE;
 		const left = initial.x;
 		const top = initial.y;
 		const right = left + initial.w;
 		const bottom = top + initial.h;
 
 		let x = left, y = top, right2 = right, bottom2 = bottom;
-		if (handle.includes('w')) x = Math.min(p.x, right - MIN_SHAPE_SIZE);
-		if (handle.includes('e')) right2 = Math.max(p.x, left + MIN_SHAPE_SIZE);
-		if (handle.includes('n')) y = Math.min(p.y, bottom - MIN_SHAPE_SIZE);
-		if (handle.includes('s')) bottom2 = Math.max(p.y, top + MIN_SHAPE_SIZE);
+		if (handle.includes('w')) x = Math.min(p.x, right - minW);
+		if (handle.includes('e')) right2 = Math.max(p.x, left + minW);
+		if (handle.includes('n')) y = Math.min(p.y, bottom - minH);
+		if (handle.includes('s')) bottom2 = Math.max(p.y, top + minH);
 
 		return Object.assign({}, initial, { x, y, w: right2 - x, h: bottom2 - y });
 	}
@@ -146,13 +154,20 @@
 		return Object.assign({}, initial, { x, y, width: r - x, height: b - y });
 	}
 
-	function resizeElement(current, initial, handle, p) {
+	function resizeElement(current, initial, handle, p, opts) {
 		switch (initial.type) {
 			case 'rectangle':
 			case 'shape':
-			case 'noteCard':
-			case 'todoCard':
 				return resizeBox(initial, handle, p);
+			case 'noteCard':
+			case 'todoCard': {
+				// Caller may override per-gesture minimums (e.g. title-driven
+				// minimum width measured from the live SVG). Fall back to the
+				// static card minimums otherwise.
+				const minW = (opts && opts.minW) || MIN_CARD_WIDTH;
+				const minH = (opts && opts.minH) || MIN_CARD_HEIGHT;
+				return resizeBox(initial, handle, p, { minW, minH });
+			}
 			case 'square':
 				return resizeSquare(initial, handle, p);
 			case 'ellipse':

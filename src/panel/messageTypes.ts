@@ -55,13 +55,24 @@ export interface CheckLinkedNotesMessage {
 	noteIds: string[];
 }
 
+/**
+ * Asks backend for a full summary of a single note (title, todo state,
+ * tags). Used right after picking a note in the picker so the new card
+ * is created with its tags already attached.
+ */
+export interface GetNoteSummaryMessage {
+	type: 'getNoteSummary';
+	noteId: string;
+}
+
 export type WebviewToBackend =
 	| ReadyMessage
 	| SaveCanvasMessage
 	| OpenLinkedNoteMessage
 	| SearchNotesMessage
 	| AddElementMessage
-	| CheckLinkedNotesMessage;
+	| CheckLinkedNotesMessage
+	| GetNoteSummaryMessage;
 
 // ---- response shapes -------------------------------------------------------
 
@@ -76,7 +87,6 @@ export interface NoteSearchHit {
 	title: string;
 	isTodo: boolean;
 	todoCompleted: boolean;
-	preview: string;
 }
 
 export interface SearchNotesResponse extends OperationResult {
@@ -89,9 +99,19 @@ export interface NoteLinkStatus {
 	title?: string;
 	isTodo?: boolean;
 	todoCompleted?: boolean;
-	preview?: string;
+	tags?: string[];
 }
 
 export interface CheckLinkedNotesResponse extends OperationResult {
 	statuses: NoteLinkStatus[];
+}
+
+export interface NoteSummaryResponse extends OperationResult {
+	summary?: {
+		id: string;
+		title: string;
+		isTodo: boolean;
+		todoCompleted: boolean;
+		tags: string[];
+	};
 }

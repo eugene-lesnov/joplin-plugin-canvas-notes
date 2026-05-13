@@ -448,11 +448,51 @@
 		});
 	}
 
-	function applyResize(elementId, handle, initial, p) {
+	function applyResize(elementId, handle, initial, p, opts) {
 		doc = Object.assign({}, doc, {
 			elements: doc.elements.map((e) =>
-				(e.id === elementId ? Transforms.resizeElement(e, initial, handle, p) : e)),
+				(e.id === elementId ? Transforms.resizeElement(e, initial, handle, p, opts) : e)),
 		});
+	}
+
+	/**
+	 * Computes per-element resize options (min width/height) for the
+	 * current resize gesture. For cards, the minimum width is the actual
+	 * rendered title width (so the title never overflows the card on
+	 * resize) capped at CARD_TITLE_MAX_RESIZE_W to keep long titles from
+	 * blocking the user from shrinking the card.
+	 */
+	function computeResizeOpts(sel) {
+		if (!sel) return null;
+		if (sel.type !== 'noteCard' && sel.type !== 'todoCard') return null;
+		const minW = computeCardMinWidth(sel);
+		const minH = (C && C.CARD_MIN_HEIGHT) || 84;
+		return { minW, minH };
+	}
+
+	/**
+	 * Upper bound on the title-driven minimum width. Sized to fit a long
+	 * title (~80 chars at 14px sans-serif) without clamping; past this
+	 * point the title is shown with an ellipsis instead of blocking the
+	 * user from shrinking the card further.
+	 */
+	const CARD_TITLE_MAX_RESIZE_W = 700;
+	const CARD_TITLE_PAD_X = 10;
+	const CARD_TITLE_FONT_SIZE = 14;
+	// Must match AVG_CHAR_WIDTH_RATIO in src/canvas/textWrap.ts, which is
+	// the heuristic clampTitleToWidth uses to decide where to truncate.
+	// Using the same ratio here guarantees: at the computed minW the
+	// display clamp accepts the full title, so the user never ends up
+	// with both the resize minimum and an ellipsis at the same time.
+	const CARD_TITLE_CHAR_WIDTH_RATIO = 0.6;
+
+	function computeCardMinWidth(sel) {
+		const baseMin = (C && C.CARD_MIN_WIDTH) || 160;
+		const title = sel && sel.title ? String(sel.title) : '';
+		if (!title) return baseMin;
+		const innerW = Math.ceil(title.length * CARD_TITLE_FONT_SIZE * CARD_TITLE_CHAR_WIDTH_RATIO);
+		const titleDriven = innerW + CARD_TITLE_PAD_X * 2;
+		return Math.max(baseMin, Math.min(titleDriven, CARD_TITLE_MAX_RESIZE_W));
 	}
 
 	function applyCanvasResize(state, p) {
@@ -804,6 +844,7 @@
 					handle: h.name,
 					initial: cloneElement(sel),
 					startDocX: p.x, startDocY: p.y,
+					resizeOpts: computeResizeOpts(sel),
 				};
 				return;
 			}
@@ -866,7 +907,7 @@
 				return;
 			}
 			case 'resizing':
-				applyResize(dragState.elementId, dragState.handle, dragState.initial, p);
+				applyResize(dragState.elementId, dragState.handle, dragState.initial, p, dragState.resizeOpts);
 				render();
 				return;
 			case 'segment-drawing':
@@ -1229,10 +1270,38 @@
 			showError(t('errorPickerUnavailable', 'Note picker is not available'));
 			return;
 		}
-		picker.open((summary) => {
+		picker.open(async (summary) => {
 			if (!doc) return;
-			addElement(Factories.makeCardFromSummary(summary, defaultCardCenter(), nextZ()));
+			// Picker returns a lean summary (no tags). Fetch the full one so
+			// the new card is created with its tags already attached. On
+			// failure fall back to the lean summary - the card will refresh
+			// its tags on the next validateLinkedCards pass anyway.
+			const full = await fetchFullNoteSummary(summary.id);
+			const effective = full ? Object.assign({}, summary, full) : summary;
+			const card = Factories.makeCardFromSummary(effective, defaultCardCenter(), nextZ());
+			addElement(fitCardToTitle(card));
 		});
+	}
+
+	/**
+	 * Ensures a freshly created card is wide enough to render its full
+	 * title without clamping. Applied at creation time so the user sees
+	 * the correct width immediately, without having to drag a handle.
+	 * The card is also re-centered around its original center so the
+	 * extra width is distributed symmetrically.
+	 */
+	function fitCardToTitle(card) {
+		if (!card || (card.type !== 'noteCard' && card.type !== 'todoCard')) return card;
+		const minW = computeCardMinWidth(card);
+		if (card.w >= minW) return card;
+		const centerX = card.x + card.w / 2;
+		return Object.assign({}, card, { x: centerX - minW / 2, w: minW });
+	}
+
+	async function fetchFullNoteSummary(noteId) {
+		if (!noteId) return null;
+		const res = await postMessage({ type: 'getNoteSummary', noteId });
+		return res && res.ok && res.summary ? res.summary : null;
 	}
 
 	/** Computes the target document-space center for a freshly-added card. */
@@ -1793,6 +1862,16 @@
 		}
 	}
 
+	function sameTags(a, b) {
+		const left = Array.isArray(a) ? a : [];
+		const right = Array.isArray(b) ? b : [];
+		if (left.length !== right.length) return false;
+		for (let i = 0; i < left.length; i++) {
+			if (left[i] !== right[i]) return false;
+		}
+		return true;
+	}
+
 	async function validateLinkedCards() {
 		if (!doc) return;
 		const cards = doc.elements.filter((e) => e.type === 'noteCard' || e.type === 'todoCard');
@@ -1815,8 +1894,8 @@
 				if (typeof status.title === 'string' && status.title !== e.title) {
 					next = Object.assign({}, next, { title: status.title }); changed = true;
 				}
-				if (typeof status.preview === 'string' && status.preview !== (e.preview || '')) {
-					next = Object.assign({}, next, { preview: status.preview }); changed = true;
+				if (Array.isArray(status.tags) && !sameTags(status.tags, e.tags)) {
+					next = Object.assign({}, next, { tags: status.tags.slice() }); changed = true;
 				}
 				if (e.type === 'todoCard' && typeof status.todoCompleted === 'boolean'
 						&& !!status.todoCompleted !== !!e.completed) {

@@ -26,7 +26,6 @@ import {
 	CARD_BODY_FONT_SIZE,
 	CARD_TITLE_FONT_SIZE,
 	CARD_TITLE_HEIGHT,
-	CARD_TITLE_MAX_CHARS,
 	CARD_TITLE_PAD_X,
 	MARKER_DIAMOND_FILLED_ID,
 	MARKER_DIAMOND_FILLED_START_ID,
@@ -38,13 +37,13 @@ import {
 import { shapeDraw, ShapePiece } from './shapeGeometry';
 import {
 	charsPerWidth,
-	clampTitle,
+	clampTitleToWidth,
 	layoutShapeLabel,
 	TEXT_LINE_HEIGHT_RATIO,
 	wrapByWidth,
-	wrapText,
 } from './textWrap';
 import { formatNumber as num, safeText } from './xmlEscape';
+import strings from '../i18n/localization';
 
 /**
  * Per-render context shared between dispatchers and individual element
@@ -58,9 +57,18 @@ export interface RenderContext {
 
 const DEFAULT_RENDER_CONTEXT: RenderContext = { canvasBackground: '#ffffff' };
 
-const PREVIEW_LINE_HEIGHT = 14;
-const PREVIEW_CHAR_WIDTH = 6;
-const PREVIEW_MIN_CHARS = 8;
+/**
+ * Card body geometry constants. Mirror canvasRenderer.js so the exported
+ * SVG and the in-app view line up pixel-for-pixel.
+ */
+const CARD_BODY_PAD_Y = 10;
+const CARD_TYPE_ICON_SIZE = 14;
+const CARD_TYPE_ICON_GAP = 6;
+const CARD_TAG_HEIGHT = 16;
+const CARD_TAG_PAD_X = 6;
+const CARD_TAG_GAP = 4;
+const CARD_TAG_FONT_SIZE = 11;
+const CARD_TAG_CHAR_WIDTH = 6;
 
 /** Element types that may carry an embedded label. */
 type LabeledShape = RectangleElement | SquareElement | CircleElement | EllipseElement | ShapeElement;
@@ -454,29 +462,7 @@ function cardTitleColor(e: NoteCardElement | TodoCardElement): string {
 	return '#4a90e2';
 }
 
-function renderPreviewLines(
-	e: NoteCardElement | TodoCardElement,
-	startY: number,
-	maxLines: number,
-): string {
-	const padX = CARD_TITLE_PAD_X;
-	const maxChars = Math.max(PREVIEW_MIN_CHARS, Math.floor((e.w - padX * 2) / PREVIEW_CHAR_WIDTH));
-	const lines = wrapText(e.preview || '', maxChars, maxLines);
-	if (lines.length === 0) return '';
-
-	const spans = lines
-		.map((line, idx) =>
-			`<tspan x="${num(e.x + padX)}"${idx === 0 ? '' : ` dy="${PREVIEW_LINE_HEIGHT}"`}>${safeText(line)}</tspan>`,
-		)
-		.join('');
-	return (
-		`<text x="${num(e.x + padX)}" y="${num(startY)}"` +
-		` font-size="${num(CARD_BODY_FONT_SIZE)}" font-family="sans-serif" fill="#666666">` +
-		`${spans}</text>`
-	);
-}
-
-function renderCard(e: NoteCardElement | TodoCardElement, statusLine: string | null): string {
+function renderCard(e: NoteCardElement | TodoCardElement): string {
 	const titleY = e.y + CARD_TITLE_HEIGHT / 2 + CARD_TITLE_FONT_SIZE / 3;
 	const titleColor = cardTitleColor(e);
 	const broken = !!e.broken;
@@ -491,41 +477,158 @@ function renderCard(e: NoteCardElement | TodoCardElement, statusLine: string | n
 		`<rect x="${num(e.x)}" y="${num(e.y)}" width="${num(e.w)}" height="${num(CARD_TITLE_HEIGHT)}"` +
 		` rx="6" fill="${titleColor}"/>`;
 
+	const titleInnerW = Math.max(1, e.w - CARD_TITLE_PAD_X * 2);
 	const titleText =
 		`<text x="${num(e.x + CARD_TITLE_PAD_X)}" y="${num(titleY)}"` +
 		` font-size="${num(CARD_TITLE_FONT_SIZE)}" font-family="sans-serif" fill="#ffffff">` +
-		`${safeText(clampTitle(e.title, CARD_TITLE_MAX_CHARS))}</text>`;
+		`${safeText(clampTitleToWidth(e.title, titleInnerW, CARD_TITLE_FONT_SIZE))}</text>`;
 
-	let cursorY = e.y + CARD_TITLE_HEIGHT + PREVIEW_LINE_HEIGHT;
-	const statusEl = statusLine
-		? `<text x="${num(e.x + CARD_TITLE_PAD_X)}" y="${num(cursorY)}"` +
-		  ` font-size="${num(CARD_BODY_FONT_SIZE)}" font-family="sans-serif" fill="#666666">` +
-		  `${safeText(statusLine)}</text>`
-		: '';
-	if (statusLine) cursorY += 16;
-
-	const footerSpace = broken ? 22 : 8;
-	const availableHeight = e.y + e.h - cursorY - footerSpace;
-	const maxLines = Math.max(0, Math.floor(availableHeight / PREVIEW_LINE_HEIGHT));
-	const previewEl = e.preview && maxLines > 0
-		? renderPreviewLines(e, cursorY, maxLines)
-		: '';
+	const body = renderCardBody(e, titleColor);
 
 	const brokenLabel = broken
 		? `<text x="${num(e.x + CARD_TITLE_PAD_X)}" y="${num(e.y + e.h - 10)}"` +
 		  ` font-size="11" font-family="sans-serif" fill="#b00020">broken link</text>`
 		: '';
 
-	return `<g>${bodyRect}${titleRect}${titleText}${statusEl}${previewEl}${brokenLabel}</g>`;
+	return `<g>${bodyRect}${titleRect}${titleText}${body}${brokenLabel}</g>`;
 }
 
 function renderNoteCard(e: NoteCardElement): string {
-	return renderCard(e, e.broken ? `note (missing): ${e.noteId}` : null);
+	return renderCard(e);
 }
 
 function renderTodoCard(e: TodoCardElement): string {
-	const status = e.completed ? '[x] done' : '[ ] todo';
-	return renderCard(e, status);
+	return renderCard(e);
+}
+
+/**
+ * Renders the card body: type icon, localized type label and tag chips.
+ * Mirrors appendCardBody in src/panel/webview/canvasRenderer.js so the
+ * exported SVG matches the in-app view pixel-for-pixel.
+ */
+function renderCardBody(e: NoteCardElement | TodoCardElement, color: string): string {
+	const bodyTop = e.y + CARD_TITLE_HEIGHT + CARD_BODY_PAD_Y;
+	const leftX = e.x + CARD_TITLE_PAD_X;
+
+	// Defensive guard: skip the body when the card is too small to fit it
+	// without overlapping the title bar. Mirrors appendCardBody in the
+	// webview renderer.
+	if (bodyTop + CARD_TYPE_ICON_SIZE > e.y + e.h) return '';
+	if (e.w < CARD_TITLE_PAD_X * 2 + CARD_TYPE_ICON_SIZE + CARD_TYPE_ICON_GAP) return '';
+
+	const icon = renderTypeIcon(e, leftX, bodyTop, color);
+
+	const labelText = cardTypeLabel(e);
+	const labelX = leftX + CARD_TYPE_ICON_SIZE + CARD_TYPE_ICON_GAP;
+	const labelBaselineY = bodyTop + CARD_TYPE_ICON_SIZE - 2;
+	const label =
+		`<text x="${num(labelX)}" y="${num(labelBaselineY)}"` +
+		` font-size="${num(CARD_BODY_FONT_SIZE)}" font-family="sans-serif" fill="#444444">` +
+		`${safeText(labelText)}</text>`;
+
+	const tags = Array.isArray(e.tags) ? e.tags : [];
+	const tagsTop = bodyTop + CARD_TYPE_ICON_SIZE + 6;
+	const tagsMarkup = tags.length > 0 ? renderTagChips(e, tags, leftX, tagsTop, color) : '';
+
+	return `${icon}${label}${tagsMarkup}`;
+}
+
+function cardTypeLabel(e: NoteCardElement | TodoCardElement): string {
+	if (e.type === 'todoCard') {
+		return e.completed ? strings.cardTypeTaskDone : strings.cardTypeTask;
+	}
+	return strings.cardTypeNote;
+}
+
+function renderTypeIcon(
+	e: NoteCardElement | TodoCardElement,
+	x: number,
+	y: number,
+	color: string,
+): string {
+	const size = CARD_TYPE_ICON_SIZE;
+	if (e.type === 'todoCard') {
+		const fill = e.completed ? color : '#ffffff';
+		const rect =
+			`<rect x="${num(x)}" y="${num(y)}" width="${num(size)}" height="${num(size)}"` +
+			` rx="2" fill="${fill}" stroke="${color}" stroke-width="1.5"/>`;
+		if (!e.completed) return rect;
+		const check =
+			`<path d="M${num(x + 3)} ${num(y + size / 2)} L${num(x + size / 2 - 1)} ${num(y + size - 4)} L${num(x + size - 3)} ${num(y + 3)}"` +
+			` fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`;
+		return `${rect}${check}`;
+	}
+	const fold = 4;
+	const d = (
+		`M${num(x)} ${num(y)} ` +
+		`L${num(x + size - fold)} ${num(y)} ` +
+		`L${num(x + size)} ${num(y + fold)} ` +
+		`L${num(x + size)} ${num(y + size)} ` +
+		`L${num(x)} ${num(y + size)} Z ` +
+		`M${num(x + size - fold)} ${num(y)} L${num(x + size - fold)} ${num(y + fold)} L${num(x + size)} ${num(y + fold)}`
+	);
+	return (
+		`<path d="${d}" fill="#ffffff" stroke="${color}" stroke-width="1.5" stroke-linejoin="round"/>`
+	);
+}
+
+function renderTagChips(
+	e: NoteCardElement | TodoCardElement,
+	tags: string[],
+	startX: number,
+	startY: number,
+	color: string,
+): string {
+	const maxRight = e.x + e.w - CARD_TITLE_PAD_X;
+	const maxBottom = e.y + e.h - (e.broken ? 22 : CARD_BODY_PAD_Y);
+	let rowX = startX;
+	let rowY = startY;
+	let rendered = 0;
+	const parts: string[] = [];
+
+	for (let i = 0; i < tags.length; i++) {
+		const label = `#${tags[i]}`;
+		const chipW = estimateChipWidth(label);
+		const remaining = tags.length - i;
+		const reserveW = remaining > 1 ? estimateChipWidth(`+${remaining - 1}`) + CARD_TAG_GAP : 0;
+
+		if (rowX + chipW > maxRight) {
+			rowX = startX;
+			rowY += CARD_TAG_HEIGHT + CARD_TAG_GAP;
+		}
+		if (rowY + CARD_TAG_HEIGHT > maxBottom) {
+			parts.push(
+				renderChip(rowX, rowY - CARD_TAG_HEIGHT - CARD_TAG_GAP, `+${tags.length - rendered}`, color),
+			);
+			return parts.join('');
+		}
+		if (rowX + chipW + reserveW > maxRight && rowY + CARD_TAG_HEIGHT * 2 + CARD_TAG_GAP > maxBottom) {
+			parts.push(renderChip(rowX, rowY, `+${tags.length - rendered}`, color));
+			return parts.join('');
+		}
+
+		parts.push(renderChip(rowX, rowY, label, color));
+		rowX += chipW + CARD_TAG_GAP;
+		rendered += 1;
+	}
+	return parts.join('');
+}
+
+function estimateChipWidth(label: string): number {
+	return CARD_TAG_PAD_X * 2 + Math.max(1, label.length) * CARD_TAG_CHAR_WIDTH;
+}
+
+function renderChip(x: number, y: number, text: string, color: string): string {
+	const w = estimateChipWidth(text);
+	const rect =
+		`<rect x="${num(x)}" y="${num(y)}" width="${num(w)}" height="${num(CARD_TAG_HEIGHT)}"` +
+		` rx="8" fill="${color}" fill-opacity="0.12"` +
+		` stroke="${color}" stroke-opacity="0.4" stroke-width="1"/>`;
+	const label =
+		`<text x="${num(x + w / 2)}" y="${num(y + CARD_TAG_HEIGHT - 4)}"` +
+		` font-size="${num(CARD_TAG_FONT_SIZE)}" font-family="sans-serif"` +
+		` text-anchor="middle" fill="#333333">${safeText(text)}</text>`;
+	return `${rect}${label}`;
 }
 
 const TEXT_DEFAULT_FILL = '#222222';
@@ -535,7 +638,7 @@ const TEXT_DEFAULT_FONT_FAMILY = 'sans-serif';
  * Renders a plain text element as <text> + <tspan> per visual line.
  *
  * Wrapping uses a character-budget heuristic from element.width and
- * fontSize, matching the webview side so the in-app preview lines up
+ * fontSize, matching the webview side so the in-app view lines up
  * with the exported SVG. Empty input produces no output.
  */
 function renderText(e: TextElement): string {

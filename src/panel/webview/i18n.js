@@ -148,8 +148,9 @@
 		// Renderer
 		cardUntitled: '(untitled)',
 		cardBrokenLink: 'broken link',
-		todoStatusDone: '[x] done',
-		todoStatusOpen: '[ ] todo',
+		cardTypeNote: 'Note',
+		cardTypeTask: 'Task',
+		cardTypeTaskDone: 'Task (done)',
 	};
 
 	const localizations = {
@@ -273,8 +274,9 @@
 
 			cardUntitled: '(без названия)',
 			cardBrokenLink: 'связь нарушена',
-			todoStatusDone: '[x] готово',
-			todoStatusOpen: '[ ] задача',
+			cardTypeNote: 'Заметка',
+			cardTypeTask: 'Задача',
+			cardTypeTaskDone: 'Задача (выполнена)',
 		},
 	};
 

@@ -41,6 +41,17 @@
 		MIN_CANVAS_SIZE: 100,
 
 		/**
+		 * Note / todo card minimums. Smaller sizes produce visual artifacts
+		 * (body overlapping the title bar, '+N' chip drawn over the title)
+		 * because the body layout has a fixed vertical budget: title (28) +
+		 * pad (10) + icon+label row (14) + pad (6) + one tag row (16).
+		 * Width is sized to fit the icon + 'Task (done)' label + a single
+		 * '+N' overflow chip without truncation.
+		 */
+		CARD_MIN_WIDTH: 160,
+		CARD_MIN_HEIGHT: 84,
+
+		/**
 		 * Minimum drag distance (in document pixels) along each axis that
 		 * promotes a shape drag-create to a custom-sized box. Smaller
 		 * gestures (incl. a plain click) fall back to default sized shape

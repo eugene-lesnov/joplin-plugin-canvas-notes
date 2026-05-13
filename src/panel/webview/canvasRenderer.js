@@ -11,7 +11,7 @@
  * Splits responsibilities between sibling helpers:
  *   - CanvasNotes.Geometry  - bbox, hit-test, distance helpers
  *   - CanvasNotes.Handles   - selection / canvas-resize handles
- *   - CanvasNotes.TextWrap  - greedy word-wrap for card previews
+ *   - CanvasNotes.TextWrap  - greedy word-wrap for shape labels and text
  */
 
 (function () {
@@ -42,9 +42,16 @@
 	// Card geometry - keep in sync with src/canvas/svgConstants.ts
 	const CARD_TITLE_HEIGHT = 28;
 	const CARD_TITLE_PAD_X = 10;
-	const CARD_BODY_LINE_HEIGHT = 14;
-	const CARD_PREVIEW_CHAR_WIDTH = 6;
-	const CARD_PREVIEW_MIN_CHARS = 8;
+	const CARD_TITLE_FONT_SIZE = 14;
+	const CARD_BODY_PAD_Y = 10;
+	const CARD_BODY_FONT_SIZE = 12;
+	const CARD_TYPE_ICON_SIZE = 14;
+	const CARD_TYPE_ICON_GAP = 6;
+	const CARD_TAG_HEIGHT = 16;
+	const CARD_TAG_PAD_X = 6;
+	const CARD_TAG_GAP = 4;
+	const CARD_TAG_FONT_SIZE = 11;
+	const CARD_TAG_CHAR_WIDTH = 6; // approximate char width at CARD_TAG_FONT_SIZE
 
 	// ---- defs / layers ----------------------------------------------------
 
@@ -456,33 +463,19 @@
 		const title = el('text', {
 			x: e.x + CARD_TITLE_PAD_X,
 			y: e.y + CARD_TITLE_HEIGHT / 2 + 5,
-			'font-size': 14,
+			'font-size': CARD_TITLE_FONT_SIZE,
 			'font-family': 'sans-serif',
 			fill: '#ffffff',
+			'data-card-title': '1',
 		});
-		title.textContent = e.title || t('cardUntitled', '(untitled)');
+		const rawTitle = e.title || t('cardUntitled', '(untitled)');
+		const titleWidth = Math.max(1, e.w - CARD_TITLE_PAD_X * 2);
+		title.textContent = TextWrap.clampTitleToWidth
+			? TextWrap.clampTitleToWidth(rawTitle, titleWidth, CARD_TITLE_FONT_SIZE)
+			: rawTitle;
 		g.appendChild(title);
 
-		let cursorY = e.y + CARD_TITLE_HEIGHT + CARD_BODY_LINE_HEIGHT;
-
-		if (e.type === 'todoCard') {
-			const status = el('text', {
-				x: e.x + CARD_TITLE_PAD_X, y: cursorY,
-				'font-size': 12, 'font-family': 'sans-serif', fill: '#666666',
-			});
-			status.textContent = e.completed
-				? t('todoStatusDone', '[x] done')
-				: t('todoStatusOpen', '[ ] todo');
-			g.appendChild(status);
-			cursorY += 16;
-		}
-
-		if (e.preview) {
-			const footerSpace = e.broken ? 22 : 8;
-			const availableHeight = e.y + e.h - cursorY - footerSpace;
-			const maxLines = Math.max(0, Math.floor(availableHeight / CARD_BODY_LINE_HEIGHT));
-			if (maxLines > 0) appendPreview(g, e, cursorY, maxLines);
-		}
+		appendCardBody(g, e);
 
 		if (e.broken) {
 			const note = el('text', {
@@ -497,30 +490,158 @@
 	}
 
 	/**
-	 * Wraps preview text into N visible lines that fit horizontally inside
-	 * the card. Greedy word-wrap with character-level fallback for very
-	 * long words. The last line is suffixed with an ellipsis if truncated.
+	 * Renders the card body: type icon, localized type label and tag chips.
+	 * The type label is placed on the first row right after the icon; tags
+	 * flow into one or more rows below. A trailing "+N" chip is added when
+	 * not all tags fit horizontally.
 	 */
-	function appendPreview(g, e, startY, maxLines) {
-		const padX = CARD_TITLE_PAD_X;
-		const maxChars = Math.max(
-			CARD_PREVIEW_MIN_CHARS,
-			Math.floor((e.w - padX * 2) / CARD_PREVIEW_CHAR_WIDTH),
-		);
-		const lines = TextWrap.wrapText(e.preview, maxChars, maxLines);
-		if (lines.length === 0) return;
+	function appendCardBody(g, e) {
+		const color = cardTitleColor(e);
+		const bodyTop = e.y + CARD_TITLE_HEIGHT + CARD_BODY_PAD_Y;
+		const leftX = e.x + CARD_TITLE_PAD_X;
 
-		const text = el('text', {
-			x: e.x + padX, y: startY,
-			'font-size': 12, 'font-family': 'sans-serif', fill: '#666666',
+		// Defensive guard: if the card is shorter than what's required for
+		// one body row, skip the body entirely so it does not draw over the
+		// title bar. Same check happens in the SVG serializer.
+		const typeRowBottom = bodyTop + CARD_TYPE_ICON_SIZE;
+		if (typeRowBottom > e.y + e.h) return;
+		// Same guard horizontally: if the body cannot fit at least the icon
+		// plus a one-character label, skip the body.
+		if (e.w < CARD_TITLE_PAD_X * 2 + CARD_TYPE_ICON_SIZE + CARD_TYPE_ICON_GAP) return;
+
+		appendTypeIcon(g, e, leftX, bodyTop, color);
+		const labelText = cardTypeLabel(e);
+		const labelX = leftX + CARD_TYPE_ICON_SIZE + CARD_TYPE_ICON_GAP;
+		const labelBaselineY = bodyTop + CARD_TYPE_ICON_SIZE - 2;
+		const label = el('text', {
+			x: labelX, y: labelBaselineY,
+			'font-size': CARD_BODY_FONT_SIZE,
+			'font-family': 'sans-serif',
+			fill: '#444444',
 		});
-		lines.forEach((line, idx) => {
-			const tspan = el('tspan', { x: e.x + padX });
-			if (idx > 0) tspan.setAttribute('dy', String(CARD_BODY_LINE_HEIGHT));
-			tspan.textContent = line;
-			text.appendChild(tspan);
+		label.textContent = labelText;
+		g.appendChild(label);
+
+		const tags = Array.isArray(e.tags) ? e.tags : [];
+		if (tags.length === 0) return;
+
+		const tagsTop = bodyTop + CARD_TYPE_ICON_SIZE + 6;
+		appendTagChips(g, e, tags, leftX, tagsTop, color);
+	}
+
+	/** Returns the localized type label for the card. */
+	function cardTypeLabel(e) {
+		if (e.type === 'todoCard') {
+			return e.completed
+				? t('cardTypeTaskDone', 'Task (done)')
+				: t('cardTypeTask', 'Task');
+		}
+		return t('cardTypeNote', 'Note');
+	}
+
+	/**
+	 * Draws a small icon at (x, y) that visually distinguishes notes from
+	 * tasks. Tasks also reflect their completion state (filled box with
+	 * checkmark when done, empty box otherwise).
+	 */
+	function appendTypeIcon(g, e, x, y, color) {
+		const size = CARD_TYPE_ICON_SIZE;
+		if (e.type === 'todoCard') {
+			g.appendChild(el('rect', {
+				x, y, width: size, height: size, rx: 2,
+				fill: e.completed ? color : '#ffffff',
+				stroke: color, 'stroke-width': 1.5,
+			}));
+			if (e.completed) {
+				const check = el('path', {
+					d: `M${x + 3} ${y + size / 2} L${x + size / 2 - 1} ${y + size - 4} L${x + size - 3} ${y + 3}`,
+					fill: 'none', stroke: '#ffffff',
+					'stroke-width': 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round',
+				});
+				g.appendChild(check);
+			}
+			return;
+		}
+		// Note icon: document with a folded corner.
+		const fold = 4;
+		const d = (
+			`M${x} ${y} ` +
+			`L${x + size - fold} ${y} ` +
+			`L${x + size} ${y + fold} ` +
+			`L${x + size} ${y + size} ` +
+			`L${x} ${y + size} Z ` +
+			`M${x + size - fold} ${y} L${x + size - fold} ${y + fold} L${x + size} ${y + fold}`
+		);
+		g.appendChild(el('path', {
+			d, fill: '#ffffff', stroke: color, 'stroke-width': 1.5,
+			'stroke-linejoin': 'round',
+		}));
+	}
+
+	/**
+	 * Flow-lays tag chips horizontally with wrap to a new row. Stops when
+	 * vertical space runs out and appends a "+N" overflow chip.
+	 */
+	function appendTagChips(g, e, tags, startX, startY, color) {
+		const maxRight = e.x + e.w - CARD_TITLE_PAD_X;
+		const maxBottom = e.y + e.h - (e.broken ? 22 : CARD_BODY_PAD_Y);
+		let rowX = startX;
+		let rowY = startY;
+		let rendered = 0;
+
+		for (let i = 0; i < tags.length; i++) {
+			const label = `#${tags[i]}`;
+			const chipW = estimateChipWidth(label);
+			const remaining = tags.length - i;
+			// Reserve space for a "+N" chip if more tags follow.
+			const reserveW = remaining > 1 ? estimateChipWidth(`+${remaining - 1}`) + CARD_TAG_GAP : 0;
+
+			if (rowX + chipW > maxRight) {
+				rowX = startX;
+				rowY += CARD_TAG_HEIGHT + CARD_TAG_GAP;
+			}
+			if (rowY + CARD_TAG_HEIGHT > maxBottom) {
+				renderOverflowChip(g, rowX, rowY - CARD_TAG_HEIGHT - CARD_TAG_GAP, tags.length - rendered, color);
+				return;
+			}
+			// If this chip plus the reserved overflow chip would not fit on
+			// the current row, and there is no room for a new row, stop early.
+			if (rowX + chipW + reserveW > maxRight && rowY + CARD_TAG_HEIGHT * 2 + CARD_TAG_GAP > maxBottom) {
+				renderOverflowChip(g, rowX, rowY, tags.length - rendered, color);
+				return;
+			}
+
+			renderChip(g, rowX, rowY, chipW, label, color);
+			rowX += chipW + CARD_TAG_GAP;
+			rendered += 1;
+		}
+	}
+
+	function estimateChipWidth(label) {
+		return CARD_TAG_PAD_X * 2 + Math.max(1, label.length) * CARD_TAG_CHAR_WIDTH;
+	}
+
+	function renderChip(g, x, y, w, text, color) {
+		g.appendChild(el('rect', {
+			x, y, width: w, height: CARD_TAG_HEIGHT, rx: 8,
+			fill: color, 'fill-opacity': 0.12,
+			stroke: color, 'stroke-opacity': 0.4, 'stroke-width': 1,
+		}));
+		const label = el('text', {
+			x: x + w / 2, y: y + CARD_TAG_HEIGHT - 4,
+			'font-size': CARD_TAG_FONT_SIZE,
+			'font-family': 'sans-serif',
+			'text-anchor': 'middle',
+			fill: '#333333',
 		});
-		g.appendChild(text);
+		label.textContent = text;
+		g.appendChild(label);
+	}
+
+	function renderOverflowChip(g, x, y, count, color) {
+		const text = `+${count}`;
+		const w = estimateChipWidth(text);
+		renderChip(g, x, y, w, text, color);
 	}
 
 	/**

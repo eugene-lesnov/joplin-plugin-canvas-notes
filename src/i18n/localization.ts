@@ -37,6 +37,11 @@ export interface AppLocalization {
 
 	// editorController.ts errors
 	errorLoadCanvasFailed: string;
+
+	// Card body labels (svgRenderers.ts)
+	cardTypeNote: string;
+	cardTypeTask: string;
+	cardTypeTaskDone: string;
 }
 
 const PLACEHOLDER_PATTERN = /\{\{\s*([A-Za-z0-9_]+)\s*\}\}/g;
@@ -64,6 +69,10 @@ const defaultStrings: AppLocalization = {
 	errorUnknownMessage: "Unknown message: {{message}}",
 
 	errorLoadCanvasFailed: "Failed to load canvas: {{reason}}",
+
+	cardTypeNote: "Note",
+	cardTypeTask: "Task",
+	cardTypeTaskDone: "Task (done)",
 };
 
 const localizations: Record<string, Partial<AppLocalization>> = {
@@ -90,6 +99,10 @@ const localizations: Record<string, Partial<AppLocalization>> = {
 		errorUnknownMessage: "Неизвестное сообщение: {{message}}",
 
 		errorLoadCanvasFailed: "Не удалось загрузить Canvas: {{reason}}",
+
+		cardTypeNote: "Заметка",
+		cardTypeTask: "Задача",
+		cardTypeTaskDone: "Задача (выполнена)",
 	},
 };
 
