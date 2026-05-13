@@ -11,19 +11,15 @@
 (function () {
 	'use strict';
 
+	const Types = window.CanvasNotes && window.CanvasNotes.Types;
+	const isShapeType = (t) => !!(Types && Types.isShapeType && Types.isShapeType(t));
+
 	/** Returns the axis-aligned bbox of an element in document space. */
 	function elementBBox(e) {
+		if (isShapeType(e.type)) {
+			return { x: e.x, y: e.y, w: e.w, h: e.h };
+		}
 		switch (e.type) {
-			case 'rectangle':
-				return { x: e.x, y: e.y, w: e.w, h: e.h };
-			case 'square':
-				return { x: e.x, y: e.y, w: e.size, h: e.size };
-			case 'circle':
-				return { x: e.cx - e.r, y: e.cy - e.r, w: e.r * 2, h: e.r * 2 };
-			case 'ellipse':
-				return { x: e.cx - e.rx, y: e.cy - e.ry, w: e.rx * 2, h: e.ry * 2 };
-			case 'shape':
-				return { x: e.x, y: e.y, w: e.w, h: e.h };
 			case 'arrow':
 			case 'line': {
 				const x = Math.min(e.from.x, e.to.x);

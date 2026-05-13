@@ -13,6 +13,9 @@
 (function () {
 	'use strict';
 
+	const Types = window.CanvasNotes && window.CanvasNotes.Types;
+	const isShapeType = (t) => !!(Types && Types.isShapeType && Types.isShapeType(t));
+
 	/** Visual square size of a handle in document units. */
 	const HANDLE_SIZE = 8;
 
@@ -31,23 +34,15 @@
 
 	/**
 	 * Returns named handles for resizing or endpoint-editing an element.
-	 * For arrows/lines the handles are 'from'/'to'; everything else uses the
-	 * 8 box handles. Legacy 'circle'/'square' types map to box handles too;
-	 * the editor reconciles their dimensions on resize.
+	 * For arrows/lines the handles are 'from'/'to'; everything else uses
+	 * the 8 box handles.
 	 */
 	function getElementHandles(e) {
+		if (isShapeType(e.type)) return boxHandles(e.x, e.y, e.w, e.h);
 		switch (e.type) {
-			case 'rectangle':
-			case 'shape':
 			case 'noteCard':
 			case 'todoCard':
 				return boxHandles(e.x, e.y, e.w, e.h);
-			case 'square':
-				return boxHandles(e.x, e.y, e.size, e.size);
-			case 'circle':
-				return boxHandles(e.cx - e.r, e.cy - e.r, e.r * 2, e.r * 2);
-			case 'ellipse':
-				return boxHandles(e.cx - e.rx, e.cy - e.ry, e.rx * 2, e.ry * 2);
 			case 'arrow':
 			case 'line':
 				return [

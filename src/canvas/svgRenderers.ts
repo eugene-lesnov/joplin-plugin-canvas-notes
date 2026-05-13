@@ -8,15 +8,12 @@
 
 import {
 	ArrowElement,
+	BoxElement,
 	CanvasElement,
-	CircleElement,
-	EllipseElement,
 	FreehandElement,
+	isShapeType,
 	LineElement,
 	NoteCardElement,
-	RectangleElement,
-	ShapeElement,
-	SquareElement,
 	TextElement,
 	TodoCardElement,
 } from './canvasTypes';
@@ -70,27 +67,14 @@ const CARD_TAG_GAP = 4;
 const CARD_TAG_FONT_SIZE = 11;
 const CARD_TAG_CHAR_WIDTH = 6;
 
-/** Element types that may carry an embedded label. */
-type LabeledShape = RectangleElement | SquareElement | CircleElement | EllipseElement | ShapeElement;
-
 /**
- * Computes the bounding box used for label layout for a labeled shape.
- * Negative width/height (rectangle / shape) are normalized.
+ * Computes the bounding box used for label layout. Negative
+ * width/height (transient during drag-create) are normalized.
  */
-function labelBoxFor(e: LabeledShape): { x: number; y: number; w: number; h: number } {
-	if (e.type === 'rectangle' || e.type === 'shape') {
-		const x = e.w >= 0 ? e.x : e.x + e.w;
-		const y = e.h >= 0 ? e.y : e.y + e.h;
-		return { x, y, w: Math.abs(e.w), h: Math.abs(e.h) };
-	}
-	if (e.type === 'square') {
-		return { x: e.x, y: e.y, w: e.size, h: e.size };
-	}
-	if (e.type === 'circle') {
-		return { x: e.cx - e.r, y: e.cy - e.r, w: e.r * 2, h: e.r * 2 };
-	}
-	// ellipse
-	return { x: e.cx - e.rx, y: e.cy - e.ry, w: e.rx * 2, h: e.ry * 2 };
+function labelBoxFor(e: BoxElement): { x: number; y: number; w: number; h: number } {
+	const x = e.w >= 0 ? e.x : e.x + e.w;
+	const y = e.h >= 0 ? e.y : e.y + e.h;
+	return { x, y, w: Math.abs(e.w), h: Math.abs(e.h) };
 }
 
 /**
@@ -100,7 +84,7 @@ function labelBoxFor(e: LabeledShape): { x: number; y: number; w: number; h: num
  * pointer-events="none" guarantees the label never intercepts clicks
  * when the SVG is viewed in an interactive context.
  */
-function renderShapeLabel(e: LabeledShape): string {
+function renderShapeLabel(e: BoxElement): string {
 	const label = e.label;
 	if (!label || !label.text) return '';
 	const box = labelBoxFor(e);
@@ -126,40 +110,10 @@ function renderShapeLabel(e: LabeledShape): string {
 }
 
 /** Wraps a shape fragment with its optional label into a <g>. */
-function withLabel(shapeFragment: string, e: LabeledShape): string {
+function withLabel(shapeFragment: string, e: BoxElement): string {
 	const label = renderShapeLabel(e);
 	if (!label) return shapeFragment;
 	return `<g>${shapeFragment}${label}</g>`;
-}
-
-function renderRectangle(e: RectangleElement): string {
-	const rx = e.rx !== undefined ? ` rx="${num(e.rx)}"` : '';
-	return (
-		`<rect x="${num(e.x)}" y="${num(e.y)}" width="${num(e.w)}" height="${num(e.h)}"${rx}` +
-		` fill="${safeText(e.fill)}" stroke="${safeText(e.stroke)}" stroke-width="${num(e.strokeWidth)}"/>`
-	);
-}
-
-function renderSquare(e: SquareElement): string {
-	const rx = e.rx !== undefined ? ` rx="${num(e.rx)}"` : '';
-	return (
-		`<rect x="${num(e.x)}" y="${num(e.y)}" width="${num(e.size)}" height="${num(e.size)}"${rx}` +
-		` fill="${safeText(e.fill)}" stroke="${safeText(e.stroke)}" stroke-width="${num(e.strokeWidth)}"/>`
-	);
-}
-
-function renderCircle(e: CircleElement): string {
-	return (
-		`<circle cx="${num(e.cx)}" cy="${num(e.cy)}" r="${num(e.r)}"` +
-		` fill="${safeText(e.fill)}" stroke="${safeText(e.stroke)}" stroke-width="${num(e.strokeWidth)}"/>`
-	);
-}
-
-function renderEllipse(e: EllipseElement): string {
-	return (
-		`<ellipse cx="${num(e.cx)}" cy="${num(e.cy)}" rx="${num(e.rx)}" ry="${num(e.ry)}"` +
-		` fill="${safeText(e.fill)}" stroke="${safeText(e.stroke)}" stroke-width="${num(e.strokeWidth)}"/>`
-	);
 }
 
 /**
@@ -196,12 +150,12 @@ function renderShapePiece(p: ShapePiece, fill: string, stroke: string, strokeWid
 }
 
 /**
- * Renders any element of the unified shape model. Each ShapeKind is
+ * Renders any element of the unified shape model. Each ShapeType is
  * dispatched to a primitive description from `shapeGeometry.ts`.
  * Negative width/height are gracefully handled because the geometry
  * helpers operate on the absolute bounds (renderer normalizes here).
  */
-function renderShape(e: ShapeElement): string {
+function renderShape(e: BoxElement): string {
 	const x = e.w >= 0 ? e.x : e.x + e.w;
 	const y = e.h >= 0 ? e.y : e.y + e.h;
 	const w = Math.abs(e.w);
@@ -211,7 +165,7 @@ function renderShape(e: ShapeElement): string {
 	const sw = num(e.strokeWidth);
 	const style = ` fill="${fill}" stroke="${stroke}" stroke-width="${sw}"`;
 
-	const draw = shapeDraw(e.shapeType, { x, y, w, h });
+	const draw = shapeDraw(e.type, { x, y, w, h });
 	switch (draw.kind) {
 		case 'polygon':
 			return `<polygon points="${draw.points}"${style}/>`;
@@ -667,12 +621,10 @@ function renderText(e: TextElement): string {
 
 /** Dispatcher: returns the SVG fragment for any supported element. */
 export function renderElement(e: CanvasElement, ctx: RenderContext = DEFAULT_RENDER_CONTEXT): string {
+	if (isShapeType(e.type)) {
+		return withLabel(renderShape(e as BoxElement), e as BoxElement);
+	}
 	switch (e.type) {
-		case 'rectangle': return withLabel(renderRectangle(e), e);
-		case 'square':    return withLabel(renderSquare(e), e);
-		case 'circle':    return withLabel(renderCircle(e), e);
-		case 'ellipse':   return withLabel(renderEllipse(e), e);
-		case 'shape':     return withLabel(renderShape(e), e);
 		case 'arrow':     return renderLineLike(e, ctx);
 		case 'line':      return renderLineLike(e, ctx);
 		case 'freehand':  return renderFreehand(e);

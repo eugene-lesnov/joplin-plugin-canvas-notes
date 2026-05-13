@@ -6,38 +6,17 @@
  * descriptive message on any structural problem.
  */
 
-import { CanvasDocument, CanvasElement, ElementType } from './canvasTypes';
+import { CanvasDocument, CanvasElement, ElementType, isShapeType } from './canvasTypes';
 
 export const CANVAS_MODEL_VERSION = 1 as const;
 
-const SUPPORTED_TYPES: ReadonlySet<ElementType> = new Set<ElementType>([
-	'rectangle',
-	'square',
-	'circle',
-	'ellipse',
-	'shape',
-	'arrow',
-	'line',
-	'freehand',
-	'noteCard',
-	'todoCard',
-	'text',
-]);
-
-const SUPPORTED_SHAPE_KINDS: ReadonlySet<string> = new Set<string>([
-	// Primitives.
-	'rectangle', 'ellipse', 'roundedRectangle',
-	'triangle', 'diamond', 'parallelogram', 'trapezoid',
-	'hexagon', 'pentagon', 'star',
-	// Flowchart.
-	'terminator', 'document', 'multipleDocuments',
-	'manualInput', 'predefinedProcess', 'delay', 'offPageConnector',
-	// Architecture.
-	'cylinder', 'cloud', 'queue', 'server', 'actor',
-	'browser', 'mobile', 'laptop', 'desktop', 'container',
-	'gear', 'loadBalancer', 'firewall', 'lock', 'folder',
-	// Notes.
-	'card', 'callout', 'stickyNote',
+/**
+ * Set of element types that don't belong to the unified shape model.
+ * Shape types are recognized via `isShapeType` to keep this list short
+ * and avoid duplicating the ShapeType union here.
+ */
+const NON_SHAPE_TYPES: ReadonlySet<string> = new Set<string>([
+	'arrow', 'line', 'freehand', 'noteCard', 'todoCard', 'text',
 ]);
 
 const SUPPORTED_STROKE_STYLES: ReadonlySet<string> = new Set<string>(['solid', 'dashed', 'dotted']);
@@ -63,7 +42,8 @@ function isString(v: unknown): v is string {
 }
 
 function isElementType(v: unknown): v is ElementType {
-	return typeof v === 'string' && SUPPORTED_TYPES.has(v as ElementType);
+	if (typeof v !== 'string') return false;
+	return isShapeType(v) || NON_SHAPE_TYPES.has(v);
 }
 
 function validateBase(e: Record<string, unknown>): void {
@@ -121,43 +101,20 @@ function validateLineLabel(e: Record<string, unknown>): void {
 function validateElement(raw: unknown): asserts raw is CanvasElement {
 	if (!isObject(raw)) throw new Error('Element must be an object');
 	validateBase(raw);
-	switch (raw.type) {
-		case 'rectangle':
-			if (!isFiniteNumber(raw.x) || !isFiniteNumber(raw.y)) throw new Error('rectangle: x,y required');
-			if (!isFiniteNumber(raw.w) || !isFiniteNumber(raw.h)) throw new Error('rectangle: w,h required');
-			validateShapeStyle(raw);
-			validateShapeLabel(raw);
-			break;
-		case 'square':
-			if (!isFiniteNumber(raw.x) || !isFiniteNumber(raw.y)) throw new Error('square: x,y required');
-			if (!isFiniteNumber(raw.size)) throw new Error('square: size required');
-			validateShapeStyle(raw);
-			validateShapeLabel(raw);
-			break;
-		case 'circle':
-			if (!isFiniteNumber(raw.cx) || !isFiniteNumber(raw.cy)) throw new Error('circle: cx,cy required');
-			if (!isFiniteNumber(raw.r)) throw new Error('circle: r required');
-			validateShapeStyle(raw);
-			validateShapeLabel(raw);
-			break;
-		case 'ellipse':
-			if (!isFiniteNumber(raw.cx) || !isFiniteNumber(raw.cy)) throw new Error('ellipse: cx,cy required');
-			if (!isFiniteNumber(raw.rx) || !isFiniteNumber(raw.ry)) throw new Error('ellipse: rx,ry required');
-			validateShapeStyle(raw);
-			validateShapeLabel(raw);
-			break;
-		case 'shape':
-			if (!isString(raw.shapeType) || !SUPPORTED_SHAPE_KINDS.has(raw.shapeType)) {
-				throw new Error(`shape.shapeType is unsupported: ${String(raw.shapeType)}`);
-			}
-			if (!isFiniteNumber(raw.x) || !isFiniteNumber(raw.y)) throw new Error('shape: x,y required');
-			if (!isFiniteNumber(raw.w) || !isFiniteNumber(raw.h)) throw new Error('shape: w,h required');
-			validateShapeStyle(raw);
-			validateShapeLabel(raw);
-			break;
+	const type = raw.type as ElementType;
+
+	if (typeof type === 'string' && isShapeType(type)) {
+		if (!isFiniteNumber(raw.x) || !isFiniteNumber(raw.y)) throw new Error(`${type}: x,y required`);
+		if (!isFiniteNumber(raw.w) || !isFiniteNumber(raw.h)) throw new Error(`${type}: w,h required`);
+		validateShapeStyle(raw);
+		validateShapeLabel(raw);
+		return;
+	}
+
+	switch (type) {
 		case 'arrow':
 		case 'line': {
-			const kind = raw.type;
+			const kind = type;
 			if (!isObject(raw.from) || !isObject(raw.to)) throw new Error(`${kind}: from/to required`);
 			const f = raw.from;
 			const t = raw.to;
@@ -196,7 +153,7 @@ function validateElement(raw: unknown): asserts raw is CanvasElement {
 			if (!isFiniteNumber(raw.w) || !isFiniteNumber(raw.h)) throw new Error('card: w,h required');
 			if (!isString(raw.noteId)) throw new Error('card.noteId required');
 			if (!isString(raw.title)) throw new Error('card.title required');
-			if (raw.type === 'todoCard' && typeof raw.completed !== 'boolean') {
+			if (type === 'todoCard' && typeof raw.completed !== 'boolean') {
 				throw new Error('todoCard.completed required');
 			}
 			break;

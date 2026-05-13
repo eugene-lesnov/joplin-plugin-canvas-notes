@@ -12,6 +12,8 @@
 	'use strict';
 
 	const C = window.CanvasNotes && window.CanvasNotes.EditorConstants;
+	const Types = window.CanvasNotes && window.CanvasNotes.Types;
+	const isShapeType = (t) => !!(Types && Types.isShapeType && Types.isShapeType(t));
 	const MIN_SHAPE_SIZE = (C && C.MIN_SHAPE_SIZE) || 8;
 	const MIN_CANVAS_SIZE = (C && C.MIN_CANVAS_SIZE) || 100;
 
@@ -26,21 +28,16 @@
 	const MIN_CARD_WIDTH = (C && C.CARD_MIN_WIDTH) || 160;
 	const MIN_CARD_HEIGHT = (C && C.CARD_MIN_HEIGHT) || 84;
 
-	function clampMin(v) { return Math.max(MIN_SHAPE_SIZE, v); }
-
 	/** Returns a copy of the element shifted by (dx, dy) in document space. */
 	function translateElement(el, dx, dy) {
+		if (isShapeType(el.type)) {
+			return Object.assign({}, el, { x: el.x + dx, y: el.y + dy });
+		}
 		switch (el.type) {
-			case 'rectangle':
-			case 'square':
-			case 'shape':
 			case 'noteCard':
 			case 'todoCard':
 			case 'text':
 				return Object.assign({}, el, { x: el.x + dx, y: el.y + dy });
-			case 'circle':
-			case 'ellipse':
-				return Object.assign({}, el, { cx: el.cx + dx, cy: el.cy + dy });
 			case 'arrow':
 			case 'line':
 				return Object.assign({}, el, {
@@ -58,9 +55,9 @@
 
 	/**
 	 * Free-form box resize: the opposite edge stays fixed and the dragged
-	 * edge/corner follows the pointer. Works for rectangles, cards, and
-	 * the legacy 'square' type. Per-type minimum size can be overridden
-	 * via {minW, minH} - defaults to MIN_SHAPE_SIZE for both axes.
+	 * edge/corner follows the pointer. Works for any box-bounded element
+	 * (shapes, cards, text). Per-type minimum size can be overridden via
+	 * {minW, minH} - defaults to MIN_SHAPE_SIZE for both axes.
 	 */
 	function resizeBox(initial, handle, p, opts) {
 		const minW = (opts && opts.minW) || MIN_SHAPE_SIZE;
@@ -77,61 +74,6 @@
 		if (handle.includes('s')) bottom2 = Math.max(p.y, top + minH);
 
 		return Object.assign({}, initial, { x, y, w: right2 - x, h: bottom2 - y });
-	}
-
-	/**
-	 * Legacy SquareElement uses a single `size`. We migrate it to a free-form
-	 * box so the user gets the same resize UX as rectangles, then collapse
-	 * the result back to a single `size` (the bigger dimension wins).
-	 */
-	function resizeSquare(initial, handle, p) {
-		const rect = resizeBox(
-			{ type: 'rectangle', x: initial.x, y: initial.y, w: initial.size, h: initial.size },
-			handle, p,
-		);
-		const size = Math.max(rect.w, rect.h);
-		return Object.assign({}, initial, { x: rect.x, y: rect.y, size });
-	}
-
-	/** Free-form ellipse resize via bbox handles. */
-	function resizeEllipse(initial, handle, p) {
-		const rect = resizeBox(
-			{
-				type: 'rectangle',
-				x: initial.cx - initial.rx,
-				y: initial.cy - initial.ry,
-				w: initial.rx * 2,
-				h: initial.ry * 2,
-			},
-			handle, p,
-		);
-		const rx = clampMin(rect.w / 2);
-		const ry = clampMin(rect.h / 2);
-		return Object.assign({}, initial, { cx: rect.x + rx, cy: rect.y + ry, rx, ry });
-	}
-
-	/**
-	 * Legacy circle resize: route through the bbox algorithm so the user
-	 * gets the same free-form behavior, then keep the model as a circle
-	 * with r = max(rx, ry).
-	 */
-	function resizeLegacyCircle(initial, handle, p) {
-		const rect = resizeBox(
-			{
-				type: 'rectangle',
-				x: initial.cx - initial.r,
-				y: initial.cy - initial.r,
-				w: initial.r * 2,
-				h: initial.r * 2,
-			},
-			handle, p,
-		);
-		const r = clampMin(Math.max(rect.w, rect.h) / 2);
-		return Object.assign({}, initial, {
-			cx: rect.x + rect.w / 2,
-			cy: rect.y + rect.h / 2,
-			r,
-		});
 	}
 
 	/**
@@ -155,10 +97,8 @@
 	}
 
 	function resizeElement(current, initial, handle, p, opts) {
+		if (isShapeType(initial.type)) return resizeBox(initial, handle, p);
 		switch (initial.type) {
-			case 'rectangle':
-			case 'shape':
-				return resizeBox(initial, handle, p);
 			case 'noteCard':
 			case 'todoCard': {
 				// Caller may override per-gesture minimums (e.g. title-driven
@@ -168,12 +108,6 @@
 				const minH = (opts && opts.minH) || MIN_CARD_HEIGHT;
 				return resizeBox(initial, handle, p, { minW, minH });
 			}
-			case 'square':
-				return resizeSquare(initial, handle, p);
-			case 'ellipse':
-				return resizeEllipse(initial, handle, p);
-			case 'circle':
-				return resizeLegacyCircle(initial, handle, p);
 			case 'arrow':
 			case 'line':
 				if (handle === 'from') {

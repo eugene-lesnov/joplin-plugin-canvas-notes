@@ -1,5 +1,5 @@
 /**
- * Pure path/polygon math for the unified `ShapeElement` model.
+ * Pure path/polygon math for the unified `BoxElement` model.
  *
  * Every helper takes a box {x, y, w, h} and returns either:
  *   - a `points` string suitable for `<polygon points="..."/>`, or
@@ -9,7 +9,7 @@
  * webview side has a JS mirror that keeps the same math.
  */
 
-import { ShapeKind } from './canvasTypes';
+import { ShapeType } from './canvasTypes';
 import { formatNumber as num } from './xmlEscape';
 
 export interface Box {
@@ -220,7 +220,7 @@ export type ShapePiece =
 	| ({ type: 'circle'; cx: number; cy: number; r: number } & PieceStyle);
 
 /**
- * Describes how to render a given ShapeKind. The renderer (TS or JS)
+ * Describes how to render a given ShapeType. The renderer (TS or JS)
  * consumes this and emits the appropriate SVG nodes. Pure data so the
  * description is identical in both runtimes.
  *
@@ -663,8 +663,8 @@ export function stickyNotePieces(b: Box): ShapePiece[] {
 	];
 }
 
-/** Maps a ShapeKind + box to the drawing primitive(s) used for rendering. */
-export function shapeDraw(kind: ShapeKind, b: Box): ShapeDraw {
+/** Maps a ShapeType + box to the drawing primitive(s) used for rendering. */
+export function shapeDraw(kind: ShapeType, b: Box): ShapeDraw {
 	switch (kind) {
 		// ---- primitives ----
 		case 'rectangle':         return { kind: 'rect', x: b.x, y: b.y, w: b.w, h: b.h, rx: 0 };

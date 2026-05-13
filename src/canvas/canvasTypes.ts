@@ -6,28 +6,16 @@
  * for portable display and is never parsed back into the model.
  */
 
-export type ElementType =
-	| 'rectangle'
-	| 'square'
-	| 'circle'
-	| 'ellipse'
-	| 'shape'
-	| 'arrow'
-	| 'line'
-	| 'freehand'
-	| 'noteCard'
-	| 'todoCard'
-	| 'text';
-
 /**
- * Sub-discriminator for the unified shape model.
+ * All box-bounded shape types in a single flat enum.
  *
- * The unified shape covers IT/diagram primitives that all share the same
- * box-like bounds (x, y, w, h). Legacy types ('rectangle', 'square',
- * 'circle', 'ellipse') predate this model and are kept for backward
- * compatibility. New shape kinds must be added here.
+ * Every value here is rendered by the unified shape pipeline
+ * (shapeGeometry + renderer dispatch) and shares the same field set
+ * (x, y, w, h + style + optional label). To add a new shape it is
+ * enough to extend this union and provide a draw entry in
+ * `shapeGeometry.shapeDraw`.
  */
-export type ShapeKind =
+export type ShapeType =
 	// Primitives + basic geometric forms.
 	| 'rectangle'
 	| 'ellipse'
@@ -68,6 +56,35 @@ export type ShapeKind =
 	| 'callout'
 	| 'stickyNote';
 
+/** Runtime list of all ShapeType values; mirrors the type union. */
+export const SHAPE_TYPES: readonly ShapeType[] = [
+	'rectangle', 'ellipse', 'roundedRectangle',
+	'triangle', 'diamond', 'parallelogram', 'trapezoid',
+	'hexagon', 'pentagon', 'star',
+	'terminator', 'document', 'multipleDocuments',
+	'manualInput', 'predefinedProcess', 'delay', 'offPageConnector',
+	'cylinder', 'cloud', 'queue', 'server', 'actor',
+	'browser', 'mobile', 'laptop', 'desktop', 'container',
+	'gear', 'loadBalancer', 'firewall', 'lock', 'folder',
+	'card', 'callout', 'stickyNote',
+];
+
+const SHAPE_TYPE_SET: ReadonlySet<string> = new Set(SHAPE_TYPES);
+
+/** True if the given element-type string is a box-bounded shape. */
+export function isShapeType(t: string): t is ShapeType {
+	return SHAPE_TYPE_SET.has(t);
+}
+
+export type ElementType =
+	| ShapeType
+	| 'arrow'
+	| 'line'
+	| 'freehand'
+	| 'noteCard'
+	| 'todoCard'
+	| 'text';
+
 /** Common fields for every element. */
 export interface BaseElement {
 	/** Stable unique identifier within the document. */
@@ -97,17 +114,14 @@ export type LabelAlign = 'left' | 'center' | 'right';
 export type LabelVerticalAlign = 'top' | 'middle' | 'bottom';
 
 /**
- * Embedded label attached to a shape (rectangle / ellipse / circle /
- * square / unified shape). Plain text only, no markdown, no rich text.
+ * Embedded label attached to a shape. Plain text only, no markdown,
+ * no rich text.
  *
  * Storage model:
  *  - the label is part of the shape element itself, not a separate
  *    overlay element;
- *  - all fields are required at runtime; old documents without a label
- *    are normalized on load (see svgParser.normalizeShapeLabel).
- *
- * Rendering / editing UI lives in later stages; this contract is the
- * data layer only.
+ *  - all fields are required at runtime; documents without a label are
+ *    normalized on load (see svgParser.normalizeShapeLabel).
  */
 export interface ShapeLabel {
 	/** User-entered text. Empty string means the shape has no visible label. */
@@ -168,62 +182,22 @@ export const DEFAULT_LINE_LABEL: LineLabel = {
 	orientation: 'parallel',
 };
 
-/** Rectangle defined by top-left corner + size. */
-export interface RectangleElement extends BaseElement, ShapeStyle {
-	type: 'rectangle';
-	x: number;
-	y: number;
-	w: number;
-	h: number;
-	/** Optional corner radius. */
-	rx?: number;
-	/** Optional embedded label. Absent on old documents. */
-	label?: ShapeLabel;
-}
-
-/** Square is a constrained rectangle: width === height === size. */
-export interface SquareElement extends BaseElement, ShapeStyle {
-	type: 'square';
-	x: number;
-	y: number;
-	size: number;
-	rx?: number;
-	label?: ShapeLabel;
-}
-
-/** Circle defined by center + radius. */
-export interface CircleElement extends BaseElement, ShapeStyle {
-	type: 'circle';
-	cx: number;
-	cy: number;
-	r: number;
-	label?: ShapeLabel;
-}
-
-/** Ellipse defined by center + radii. */
-export interface EllipseElement extends BaseElement, ShapeStyle {
-	type: 'ellipse';
-	cx: number;
-	cy: number;
-	rx: number;
-	ry: number;
-	label?: ShapeLabel;
-}
-
 /**
- * Unified shape element: a box-bounded primitive whose visual is
- * determined by `shapeType`. Adding a new diagram shape requires only
- * extending ShapeKind and the renderer dispatch; geometry, hit-test,
- * resize and selection handles work uniformly across all kinds.
+ * Unified box-bounded shape element. Geometry is uniform across all
+ * ShapeType values: an axis-aligned rectangle (x, y, w, h) plus shared
+ * stroke/fill style and an optional embedded label. The discriminator
+ * (`type`) drives the visual rendered by `shapeGeometry.shapeDraw`.
+ *
+ * Negative width/height are allowed transiently during drag-create /
+ * drag-resize; renderers normalize to the absolute bounds.
  */
-export interface ShapeElement extends BaseElement, ShapeStyle {
-	type: 'shape';
-	shapeType: ShapeKind;
+export interface BoxElement extends BaseElement, ShapeStyle {
+	type: ShapeType;
 	x: number;
 	y: number;
 	w: number;
 	h: number;
-	/** Optional embedded label. Absent on old documents. */
+	/** Optional embedded label. Absent on documents without a caption. */
 	label?: ShapeLabel;
 }
 
@@ -356,11 +330,7 @@ export interface TextElement extends BaseElement {
 
 /** Discriminated union of all supported elements. */
 export type CanvasElement =
-	| RectangleElement
-	| SquareElement
-	| CircleElement
-	| EllipseElement
-	| ShapeElement
+	| BoxElement
 	| ArrowElement
 	| LineElement
 	| FreehandElement

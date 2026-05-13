@@ -11,7 +11,7 @@
  */
 
 import { assertCanvasDocument } from './canvasModel';
-import { CanvasDocument, DEFAULT_LINE_LABEL, DEFAULT_SHAPE_LABEL } from './canvasTypes';
+import { CanvasDocument, DEFAULT_LINE_LABEL, DEFAULT_SHAPE_LABEL, isShapeType } from './canvasTypes';
 import { CANVAS_METADATA_ID } from './svgConstants';
 import { unescapeXml } from './xmlEscape';
 
@@ -84,11 +84,6 @@ function normalizeLineLikeElement(raw: Record<string, unknown>): void {
 	}
 }
 
-/** Element types that may carry an embedded label. */
-const LABELED_SHAPE_TYPES: ReadonlySet<string> = new Set<string>([
-	'rectangle', 'square', 'circle', 'ellipse', 'shape',
-]);
-
 const LABEL_ALIGNS: ReadonlySet<string> = new Set<string>(['left', 'center', 'right']);
 const LABEL_VALIGNS: ReadonlySet<string> = new Set<string>(['top', 'middle', 'bottom']);
 
@@ -158,7 +153,7 @@ function normalizeDocument(parsed: unknown): void {
 			normalizeLineLikeElement(el);
 			normalizeLineLabel(el);
 		}
-		if (typeof el.type === 'string' && LABELED_SHAPE_TYPES.has(el.type)) {
+		if (typeof el.type === 'string' && isShapeType(el.type)) {
 			normalizeShapeLabel(el);
 		}
 	}

@@ -37,6 +37,7 @@ const WEBVIEW_SCRIPTS = [
 	// Localization must come first so other modules can read CanvasNotes.t.
 	`./${WEBVIEW_DIR}/i18n.js`,
 	// Shared helpers (must be loaded before the renderer and the controller).
+	`./${WEBVIEW_DIR}/canvasTypes.js`,
 	`./${WEBVIEW_DIR}/canvasGeometry.js`,
 	`./${WEBVIEW_DIR}/canvasHandles.js`,
 	`./${WEBVIEW_DIR}/textWrap.js`,

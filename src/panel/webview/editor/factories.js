@@ -23,13 +23,12 @@
 	}
 
 	/**
-	 * Square tool creates a free-form rectangle (model type 'rectangle')
-	 * so it can be stretched along either axis from any handle.
-	 * The click flavor centers a default-sized box on the click point.
+	 * Builds a unified box-bounded shape element. The click flavor centers
+	 * a default-sized box on the click point.
 	 */
-	function makeRectangle(p, nextZ) {
+	function makeBox(shapeType, p, nextZ) {
 		return {
-			id: newId(), type: 'rectangle', z: nextZ,
+			id: newId(), type: shapeType, z: nextZ,
 			x: p.x - C.DEFAULT_SQUARE / 2, y: p.y - C.DEFAULT_SQUARE / 2,
 			w: C.DEFAULT_SQUARE, h: C.DEFAULT_SQUARE,
 			fill: C.DEFAULT_FILL, stroke: C.DEFAULT_STROKE, strokeWidth: C.DEFAULT_STROKE_WIDTH,
@@ -37,41 +36,15 @@
 	}
 
 	/**
-	 * Drag-create flavor of the rectangle: bounds are passed in directly
-	 * so the user-drawn box becomes the initial size. The caller is
-	 * expected to normalize {x, y, width, height} (no negatives).
+	 * Drag-create flavor: bounds passed in directly so the user-drawn box
+	 * becomes the initial size. The caller normalizes {x, y, width, height}
+	 * (no negatives).
 	 */
-	function makeRectangleFromBounds(bounds, nextZ) {
+	function makeBoxFromBounds(shapeType, bounds, nextZ) {
 		return {
-			id: newId(), type: 'rectangle', z: nextZ,
+			id: newId(), type: shapeType, z: nextZ,
 			x: bounds.x, y: bounds.y,
 			w: bounds.width, h: bounds.height,
-			fill: C.DEFAULT_FILL, stroke: C.DEFAULT_STROKE, strokeWidth: C.DEFAULT_STROKE_WIDTH,
-		};
-	}
-
-	/**
-	 * Circle tool creates a free-form ellipse so it can be stretched
-	 * along any axis. Initial rx === ry so the shape looks circular.
-	 */
-	function makeEllipse(p, nextZ) {
-		return {
-			id: newId(), type: 'ellipse', z: nextZ,
-			cx: p.x, cy: p.y, rx: C.DEFAULT_CIRCLE_R, ry: C.DEFAULT_CIRCLE_R,
-			fill: C.DEFAULT_FILL, stroke: C.DEFAULT_STROKE, strokeWidth: C.DEFAULT_STROKE_WIDTH,
-		};
-	}
-
-	/**
-	 * Drag-create flavor of the ellipse: derived from a bounding box,
-	 * matching how SVG <ellipse> is positioned (center + radii).
-	 */
-	function makeEllipseFromBounds(bounds, nextZ) {
-		const rx = bounds.width / 2;
-		const ry = bounds.height / 2;
-		return {
-			id: newId(), type: 'ellipse', z: nextZ,
-			cx: bounds.x + rx, cy: bounds.y + ry, rx, ry,
 			fill: C.DEFAULT_FILL, stroke: C.DEFAULT_STROKE, strokeWidth: C.DEFAULT_STROKE_WIDTH,
 		};
 	}
@@ -84,7 +57,7 @@
 	 */
 	function makeSegment(type, from, to, nextZ, opts) {
 		const o = opts || {};
-		const el = {
+		return {
 			id: newId(), type, z: nextZ,
 			from: { x: from.x, y: from.y },
 			to:   { x: to.x,   y: to.y   },
@@ -93,30 +66,6 @@
 			strokeStyle: o.strokeStyle || 'solid',
 			startArrow: o.startArrow || 'none',
 			endArrow: o.endArrow || (type === 'arrow' ? 'arrow' : 'none'),
-		};
-		return el;
-	}
-
-	/**
-	 * Builds a unified shape element of the given kind. Drag-create flavor
-	 * uses explicit bounds; the click flavor centers a default-sized box
-	 * on the click point.
-	 */
-	function makeShape(shapeType, p, nextZ) {
-		return {
-			id: newId(), type: 'shape', shapeType: shapeType, z: nextZ,
-			x: p.x - C.DEFAULT_SQUARE / 2, y: p.y - C.DEFAULT_SQUARE / 2,
-			w: C.DEFAULT_SQUARE, h: C.DEFAULT_SQUARE,
-			fill: C.DEFAULT_FILL, stroke: C.DEFAULT_STROKE, strokeWidth: C.DEFAULT_STROKE_WIDTH,
-		};
-	}
-
-	function makeShapeFromBounds(shapeType, bounds, nextZ) {
-		return {
-			id: newId(), type: 'shape', shapeType: shapeType, z: nextZ,
-			x: bounds.x, y: bounds.y,
-			w: bounds.width, h: bounds.height,
-			fill: C.DEFAULT_FILL, stroke: C.DEFAULT_STROKE, strokeWidth: C.DEFAULT_STROKE_WIDTH,
 		};
 	}
 
@@ -175,12 +124,8 @@
 	window.CanvasNotes = window.CanvasNotes || {};
 	window.CanvasNotes.EditorFactories = {
 		newId,
-		makeRectangle,
-		makeRectangleFromBounds,
-		makeEllipse,
-		makeEllipseFromBounds,
-		makeShape,
-		makeShapeFromBounds,
+		makeBox,
+		makeBoxFromBounds,
 		makeSegment,
 		makeArrow: (from, to, z) => makeSegment('arrow', from, to, z),
 		makeLine:  (from, to, z) => makeSegment('line',  from, to, z),

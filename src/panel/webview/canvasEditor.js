@@ -198,7 +198,7 @@
 		const defaults = kind === 'lineLabel' ? DEFAULT_LINE_LABEL : DEFAULT_SHAPE_LABEL;
 		const matchType = (e) => kind === 'lineLabel'
 			? (e.type === 'arrow' || e.type === 'line')
-			: LABELED_SHAPE_TYPES.has(e.type);
+			: isLabeledShape(e.type);
 		const changed = mapElement(elementId, (e) => {
 			if (!matchType(e)) return e;
 			const prev = e.label || defaults;
@@ -686,7 +686,7 @@
 
 		const toolDef = Toolbar.getToolDef ? Toolbar.getToolDef(activeTool) : null;
 		// Fall back to a hardcoded mapping when the toolbar lookup is
-		// unavailable (defensive: keeps legacy tool ids working even if the
+		// unavailable (defensive: keeps the editor working even if the
 		// toolbar module fails to load).
 		const toolKind = toolDef
 			? toolDef.kind
@@ -694,8 +694,7 @@
 				: activeTool === 'pen' ? 'pen'
 					: activeTool === 'text' ? 'text'
 						: (activeTool === 'arrow' || activeTool === 'line') ? 'line'
-							: (activeTool === 'square' || activeTool === 'circle') ? 'legacy'
-								: null);
+							: null);
 
 		if (toolKind === 'select') {
 			handleSelectPointerDown(evt, p);
@@ -734,19 +733,15 @@
 			return;
 		}
 
-		if (toolKind === 'legacy' || toolKind === 'shape') {
+		if (toolKind === 'shape') {
 			// Drag-create gesture: a small drag (or plain click) yields a
 			// default-sized shape centered on the click point; a real drag
-			// produces a shape that exactly fills the user-drawn box.
-			// Preview kind: legacy 'circle' draws an ellipse preview, everything
-			// else uses a dashed bbox rectangle (cheap, unambiguous).
-			const previewKind = activeTool === 'circle' ? 'circle' : 'rect';
+			// produces a shape that exactly fills the user-drawn box. The
+			// preview uses a dashed bbox rectangle (cheap, unambiguous) for
+			// every shape kind including ellipse.
 			dragState = {
 				mode: 'shape-creating',
-				toolId: activeTool,
-				toolKind: toolKind,
 				shapeType: toolDef && toolDef.shapeType ? toolDef.shapeType : null,
-				previewKind: previewKind,
 				start: p,
 				current: p,
 				startClientX: evt.clientX,
@@ -924,7 +919,7 @@
 				return;
 			case 'shape-creating':
 				dragState.current = p;
-				TempPreview.showShape(svg(), dragState.previewKind, dragState.start, p);
+				TempPreview.showShape(svg(), dragState.start, p);
 				return;
 		}
 	}
@@ -982,51 +977,30 @@
 	}
 
 	/**
-	 * Materializes the drag-created shape (legacy or unified). A drag
-	 * larger than the min threshold along both axes uses the user-drawn
-	 * bounds; a smaller drag or plain click falls back to a default-sized
-	 * shape centered on the click point. Mirrors text-create UX so single
-	 * clicks remain useful.
+	 * Materializes the drag-created shape. A drag larger than the min
+	 * threshold along both axes uses the user-drawn bounds; a smaller
+	 * drag or plain click falls back to a default-sized shape centered
+	 * on the click point. Mirrors text-create UX so single clicks remain
+	 * useful.
 	 */
 	function finishShapeCreate(state) {
+		if (!state.shapeType) return;
 		const from = state.start;
 		const to = state.current;
 		const rawW = Math.abs(to.x - from.x);
 		const rawH = Math.abs(to.y - from.y);
 		const hasDraggedSize = rawW >= C.SHAPE_DRAG_MIN_SIZE && rawH >= C.SHAPE_DRAG_MIN_SIZE;
-		const bounds = {
-			x: Math.min(from.x, to.x),
-			y: Math.min(from.y, to.y),
-			width: rawW,
-			height: rawH,
-		};
 
-		// Unified shape (diamond, hexagon, cylinder, ...).
-		if (state.toolKind === 'shape' && state.shapeType) {
-			if (hasDraggedSize) {
-				addElement(Factories.makeShapeFromBounds(state.shapeType, bounds, nextZ()));
-			} else {
-				addElement(Factories.makeShape(state.shapeType, from, nextZ()));
-			}
-			return;
-		}
-
-		// Legacy shapes: square (rectangle model) and circle (ellipse model).
-		if (state.toolId === 'square' || state.toolKind === 'legacy' && state.toolId === 'square') {
-			if (hasDraggedSize) {
-				addElement(Factories.makeRectangleFromBounds(bounds, nextZ()));
-			} else {
-				addElement(Factories.makeRectangle(from, nextZ()));
-			}
-			return;
-		}
-
-		if (state.toolId === 'circle') {
-			if (hasDraggedSize) {
-				addElement(Factories.makeEllipseFromBounds(bounds, nextZ()));
-			} else {
-				addElement(Factories.makeEllipse(from, nextZ()));
-			}
+		if (hasDraggedSize) {
+			const bounds = {
+				x: Math.min(from.x, to.x),
+				y: Math.min(from.y, to.y),
+				width: rawW,
+				height: rawH,
+			};
+			addElement(Factories.makeBoxFromBounds(state.shapeType, bounds, nextZ()));
+		} else {
+			addElement(Factories.makeBox(state.shapeType, from, nextZ()));
 		}
 	}
 
@@ -1330,7 +1304,7 @@
 			return;
 		}
 
-		if (LABELED_SHAPE_TYPES.has(hit.type)) {
+		if (isLabeledShape(hit.type)) {
 			editShapeLabel(hit);
 			return;
 		}
@@ -1361,12 +1335,13 @@
 	}
 
 	/**
-	 * Element types whose embedded label can be edited via double-click.
-	 * Matches the set of labelable shapes in the model.
+	 * Predicate for element types whose embedded label can be edited via
+	 * double-click. Matches the unified box-bounded shape model.
 	 */
-	const LABELED_SHAPE_TYPES = new Set([
-		'rectangle', 'square', 'circle', 'ellipse', 'shape',
-	]);
+	const Types = window.CanvasNotes && window.CanvasNotes.Types;
+	function isLabeledShape(type) {
+		return !!(Types && Types.isShapeType && Types.isShapeType(type));
+	}
 
 	const DEFAULT_SHAPE_LABEL = {
 		text: '',
@@ -1403,20 +1378,16 @@
 	}
 
 	/**
-	 * Bounding box used for label positioning. Mirrors labelBoxFor() on the
-	 * renderer and serializer sides; negative-sized rectangles/shapes are
-	 * normalized so the overlay lands on the visible quadrant.
+	 * Bounding box used for label positioning. Mirrors labelBoxFor() on
+	 * the renderer and serializer sides; negative-sized boxes (transient
+	 * during drag-create) are normalized so the overlay lands on the
+	 * visible quadrant.
 	 */
 	function shapeLabelBox(e) {
-		if (e.type === 'rectangle' || e.type === 'shape') {
-			const x = e.w >= 0 ? e.x : e.x + e.w;
-			const y = e.h >= 0 ? e.y : e.y + e.h;
-			return { x, y, w: Math.abs(e.w), h: Math.abs(e.h) };
-		}
-		if (e.type === 'square') return { x: e.x, y: e.y, w: e.size, h: e.size };
-		if (e.type === 'circle') return { x: e.cx - e.r, y: e.cy - e.r, w: e.r * 2, h: e.r * 2 };
-		if (e.type === 'ellipse') return { x: e.cx - e.rx, y: e.cy - e.ry, w: e.rx * 2, h: e.ry * 2 };
-		return null;
+		if (!isLabeledShape(e.type)) return null;
+		const x = e.w >= 0 ? e.x : e.x + e.w;
+		const y = e.h >= 0 ? e.y : e.y + e.h;
+		return { x, y, w: Math.abs(e.w), h: Math.abs(e.h) };
 	}
 
 	/**
@@ -1835,7 +1806,7 @@
 	 */
 	function updateShapeLabelText(elementId, nextText) {
 		const changed = mapElement(elementId, (e) => {
-			if (!LABELED_SHAPE_TYPES.has(e.type)) return e;
+			if (!isLabeledShape(e.type)) return e;
 			const prev = e.label || DEFAULT_SHAPE_LABEL;
 			if ((prev.text || '') === (nextText || '')) return e;
 			const nextLabel = Object.assign({}, DEFAULT_SHAPE_LABEL, prev, { text: nextText || '' });

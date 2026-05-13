@@ -12,8 +12,8 @@
  *
  * Tool model:
  *   - id           - canonical tool id used by the editor controller;
- *   - kind         - 'select' | 'shape' | 'legacy' | 'line' | 'pen' | 'text';
- *   - shapeType    - ShapeKind for kind === 'shape';
+ *   - kind         - 'select' | 'shape' | 'line' | 'pen' | 'text';
+ *   - shapeType    - ShapeType for kind === 'shape';
  *   - lineSpec     - { type, strokeStyle, startArrow, endArrow } for 'line';
  *   - aliasOf      - if set, this tile reuses the same shapeType as another
  *                    tool but appears in the popover under a different name
@@ -52,7 +52,7 @@
 	}
 
 	/**
-	 * Builds an icon SVG by rendering a ShapeKind into a small viewBox.
+	 * Builds an icon SVG by rendering a ShapeType into a small viewBox.
 	 * Box dimensions favor a slightly wider-than-tall rectangle so most
 	 * shapes (cards, queues, terminators) read at glance; symmetric shapes
 	 * (circle, diamond, star, BPMN gates) get a square box.

@@ -7,7 +7,7 @@
  * directly into Joplin's webview context.
  */
 
-import { CanvasDocument, CanvasElement } from './canvasTypes';
+import { BoxElement, CanvasDocument, CanvasElement, isShapeType } from './canvasTypes';
 import { MIN_CANVAS_DIMENSION, VIEWBOX_PADDING } from './svgConstants';
 
 export interface Bounds {
@@ -19,17 +19,11 @@ export interface Bounds {
 
 /** Axis-aligned bounding box of a single element in document space. */
 export function elementBounds(e: CanvasElement): Bounds {
+	if (isShapeType(e.type)) {
+		const b = e as BoxElement;
+		return { x: b.x, y: b.y, w: b.w, h: b.h };
+	}
 	switch (e.type) {
-		case 'rectangle':
-			return { x: e.x, y: e.y, w: e.w, h: e.h };
-		case 'square':
-			return { x: e.x, y: e.y, w: e.size, h: e.size };
-		case 'circle':
-			return { x: e.cx - e.r, y: e.cy - e.r, w: e.r * 2, h: e.r * 2 };
-		case 'ellipse':
-			return { x: e.cx - e.rx, y: e.cy - e.ry, w: e.rx * 2, h: e.ry * 2 };
-		case 'shape':
-			return { x: e.x, y: e.y, w: e.w, h: e.h };
 		case 'arrow':
 		case 'line': {
 			const x = Math.min(e.from.x, e.to.x);

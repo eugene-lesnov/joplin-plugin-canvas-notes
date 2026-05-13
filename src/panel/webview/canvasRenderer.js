@@ -21,6 +21,8 @@
 	const Handles = window.CanvasNotes && window.CanvasNotes.Handles;
 	const TextWrap = window.CanvasNotes && window.CanvasNotes.TextWrap;
 	const ShapeGeometry = window.CanvasNotes && window.CanvasNotes.ShapeGeometry;
+	const Types = window.CanvasNotes && window.CanvasNotes.Types;
+	const isShapeType = (t) => !!(Types && Types.isShapeType && Types.isShapeType(t));
 
 	function t(key, fallback) {
 		const i18n = window.CanvasNotes && window.CanvasNotes.t;
@@ -119,36 +121,7 @@
 		return node;
 	}
 
-	function setShapeStyle(node, e) {
-		setAttrs(node, {
-			fill: e.fill,
-			stroke: e.stroke,
-			'stroke-width': e.strokeWidth,
-		});
-	}
-
 	// ---- per-element renderers --------------------------------------------
-
-	function renderRectLike(e) {
-		const w = e.type === 'square' ? e.size : e.w;
-		const h = e.type === 'square' ? e.size : e.h;
-		const node = el('rect', { x: e.x, y: e.y, width: w, height: h });
-		if (e.rx !== undefined) node.setAttribute('rx', String(e.rx));
-		setShapeStyle(node, e);
-		return node;
-	}
-
-	function renderCircle(e) {
-		const node = el('circle', { cx: e.cx, cy: e.cy, r: e.r });
-		setShapeStyle(node, e);
-		return node;
-	}
-
-	function renderEllipse(e) {
-		const node = el('ellipse', { cx: e.cx, cy: e.cy, rx: e.rx, ry: e.ry });
-		setShapeStyle(node, e);
-		return node;
-	}
 
 	/**
 	 * Stroke-dasharray pattern for a given line style. Mirrors
@@ -369,7 +342,13 @@
 	 */
 	function renderShape(e) {
 		if (!ShapeGeometry) return null;
-		const draw = ShapeGeometry.shapeDraw(e.shapeType, { x: e.x, y: e.y, w: e.w, h: e.h });
+		// Normalize negative width/height (transient during drag-create)
+		// so the geometry helpers always see a positive box.
+		const x = e.w >= 0 ? e.x : e.x + e.w;
+		const y = e.h >= 0 ? e.y : e.y + e.h;
+		const w = Math.abs(e.w);
+		const h = Math.abs(e.h);
+		const draw = ShapeGeometry.shapeDraw(e.type, { x, y, w, h });
 		if (!draw) return null;
 
 		const applyStyle = (node) => {
@@ -678,28 +657,16 @@
 	}
 
 	/**
-	 * Returns the box used to position an embedded shape label. Handles
-	 * the per-type geometry differences (rectangle/shape use w,h; square
-	 * uses size for both; circle/ellipse expand from center). Negative
-	 * width/height boxes are normalized so labels render correctly while
-	 * the user is drag-resizing into the opposite quadrant.
+	 * Returns the box used to position an embedded shape label.
+	 * Negative width/height boxes are normalized so labels render
+	 * correctly while the user is drag-resizing into the opposite
+	 * quadrant.
 	 */
 	function labelBoxFor(e) {
-		if (e.type === 'rectangle' || e.type === 'shape') {
-			const x = e.w >= 0 ? e.x : e.x + e.w;
-			const y = e.h >= 0 ? e.y : e.y + e.h;
-			return { x, y, w: Math.abs(e.w), h: Math.abs(e.h) };
-		}
-		if (e.type === 'square') {
-			return { x: e.x, y: e.y, w: e.size, h: e.size };
-		}
-		if (e.type === 'circle') {
-			return { x: e.cx - e.r, y: e.cy - e.r, w: e.r * 2, h: e.r * 2 };
-		}
-		if (e.type === 'ellipse') {
-			return { x: e.cx - e.rx, y: e.cy - e.ry, w: e.rx * 2, h: e.ry * 2 };
-		}
-		return null;
+		if (!isShapeType(e.type)) return null;
+		const x = e.w >= 0 ? e.x : e.x + e.w;
+		const y = e.h >= 0 ? e.y : e.y + e.h;
+		return { x, y, w: Math.abs(e.w), h: Math.abs(e.h) };
 	}
 
 	/**
@@ -755,12 +722,8 @@
 	}
 
 	function renderElement(e, ctx) {
+		if (isShapeType(e.type)) return withLabel(renderShape(e), e);
 		switch (e.type) {
-			case 'rectangle':
-			case 'square':    return withLabel(renderRectLike(e), e);
-			case 'circle':    return withLabel(renderCircle(e), e);
-			case 'ellipse':   return withLabel(renderEllipse(e), e);
-			case 'shape':     return withLabel(renderShape(e), e);
 			case 'arrow':
 			case 'line':      return renderSegment(e, ctx);
 			case 'freehand':  return renderFreehand(e);
