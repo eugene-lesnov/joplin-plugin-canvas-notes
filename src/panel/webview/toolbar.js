@@ -7,8 +7,8 @@
  *   [Select] | [Shapes ▼] [Lines ▼] | [Pen] [Text]
  *
  * Shapes and Lines are split-button dropdowns: the button shows the last
- * tool picked from that group, the caret opens a searchable popover with
- * the full palette grouped into sub-sections.
+ * tool picked from that group, the caret opens a popover with the full
+ * palette grouped into sub-sections.
  *
  * Tool model:
  *   - id           - canonical tool id used by the editor controller;
@@ -370,24 +370,6 @@
 
 	// ---- popover content -------------------------------------------------
 
-	/**
-	 * Filters the group's tools by the lowercase search query (matched
-	 * against the localized label) and returns subgroup -> tools[] map.
-	 */
-	function filterTools(groupId, query) {
-		const q = (query || '').trim().toLowerCase();
-		const groupTools = TOOLS.filter((tool) => tool.group === groupId);
-		if (!q) {
-			return groupTools;
-		}
-		return groupTools.filter((tool) => {
-			const label = t(tool.labelKey, tool.fallback);
-			return label.toLowerCase().includes(q) ||
-				tool.id.toLowerCase().includes(q) ||
-				(tool.shapeType ? tool.shapeType.toLowerCase().includes(q) : false);
-		});
-	}
-
 	function renderTile(tool, activeToolId, onPick) {
 		const btn = document.createElement('button');
 		btn.type = 'button';
@@ -403,72 +385,34 @@
 	}
 
 	/**
-	 * Builds the popover body: a search input on top and grouped grids of
-	 * tiles below. The search input keeps focus across re-renders so the
-	 * user can type continuously without losing the cursor.
+	 * Builds the popover body: grouped grids of tiles, one per subgroup.
 	 */
 	function buildDropdownContent(groupId, activeToolId, onPick) {
 		const root = document.createElement('div');
 		root.className = 'toolbar-popover-content';
 		root.dataset.group = groupId;
 
-		const searchWrap = document.createElement('div');
-		searchWrap.className = 'toolbar-popover-search';
-		const search = document.createElement('input');
-		search.type = 'text';
-		search.className = 'toolbar-popover-search-input';
-		search.placeholder = t('toolSearchPlaceholder', 'Search...');
-		search.setAttribute('autocomplete', 'off');
-		searchWrap.appendChild(search);
-		root.appendChild(searchWrap);
-
 		const body = document.createElement('div');
 		body.className = 'toolbar-popover-body';
 		root.appendChild(body);
 
-		function renderBody() {
-			body.innerHTML = '';
-			const filtered = filterTools(groupId, search.value);
-			if (filtered.length === 0) {
-				const empty = document.createElement('div');
-				empty.className = 'toolbar-popover-empty';
-				empty.textContent = t('toolSearchEmpty', 'No matches');
-				body.appendChild(empty);
-				return;
+		const groupTools = TOOLS.filter((tool) => tool.group === groupId);
+		const subgroupOrder = groupId === 'shapes' ? SUBGROUP_ORDER_SHAPES : SUBGROUP_ORDER_LINES;
+		for (const subgroup of subgroupOrder) {
+			const tools = groupTools.filter((tool) => tool.subgroup === subgroup);
+			if (tools.length === 0) continue;
+			const heading = document.createElement('div');
+			heading.className = 'toolbar-popover-heading';
+			const meta = SUBGROUP_LABEL[subgroup] || { fallback: subgroup };
+			heading.textContent = t(meta.key, meta.fallback);
+			body.appendChild(heading);
+			const grid = document.createElement('div');
+			grid.className = 'toolbar-popover-grid';
+			for (const tool of tools) {
+				grid.appendChild(renderTile(tool, activeToolId, onPick));
 			}
-			const subgroupOrder = groupId === 'shapes' ? SUBGROUP_ORDER_SHAPES : SUBGROUP_ORDER_LINES;
-			for (const subgroup of subgroupOrder) {
-				const tools = filtered.filter((tool) => tool.subgroup === subgroup);
-				if (tools.length === 0) continue;
-				const heading = document.createElement('div');
-				heading.className = 'toolbar-popover-heading';
-				const meta = SUBGROUP_LABEL[subgroup] || { fallback: subgroup };
-				heading.textContent = t(meta.key, meta.fallback);
-				body.appendChild(heading);
-				const grid = document.createElement('div');
-				grid.className = 'toolbar-popover-grid';
-				for (const tool of tools) {
-					grid.appendChild(renderTile(tool, activeToolId, onPick));
-				}
-				body.appendChild(grid);
-			}
+			body.appendChild(grid);
 		}
-
-		search.addEventListener('input', renderBody);
-		// Enter on a non-empty filter selects the first match.
-		search.addEventListener('keydown', (evt) => {
-			if (evt.key !== 'Enter') return;
-			const filtered = filterTools(groupId, search.value);
-			if (filtered.length === 0) return;
-			evt.preventDefault();
-			onPick(filtered[0].id);
-		});
-
-		renderBody();
-		// Focus the search input on the next tick so the popover finishes
-		// mounting before the focus lands - prevents the browser from
-		// scrolling the page to the input.
-		setTimeout(() => { try { search.focus(); } catch (_) { /* ignore */ } }, 0);
 
 		return root;
 	}

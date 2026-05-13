@@ -114,8 +114,6 @@
 		toolSubgroupArchitecture: 'Architecture',
 		toolSubgroupNotes: 'Notes',
 		toolSubgroupUml: 'UML connectors',
-		toolSearchPlaceholder: 'Search...',
-		toolSearchEmpty: 'No matches',
 
 		// Status
 		statusReady: 'Ready',
@@ -245,8 +243,6 @@
 			toolSubgroupArchitecture: 'Архитектура',
 			toolSubgroupNotes: 'Заметки',
 			toolSubgroupUml: 'UML-соединители',
-			toolSearchPlaceholder: 'Поиск...',
-			toolSearchEmpty: 'Ничего не найдено',
 
 			statusReady: 'Готово',
 			statusLoaded: 'Загружено',
