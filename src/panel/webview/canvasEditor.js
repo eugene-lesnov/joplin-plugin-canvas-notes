@@ -271,8 +271,11 @@
 		autosaveHandle = setTimeout(() => {
 			autosaveHandle = null;
 			if (saveState !== 'dirty') return;
-			// Skip while the user is interacting with the canvas.
-			if (dragState) { scheduleAutosave(); return; }
+			// Skip while the user is interacting with the canvas or editing
+			// text inline. Without the textEditor guard, autosave would call
+			// onSaveClick, which commits and closes the open editor mid-typing,
+			// stealing focus and visually resetting the edit session.
+			if (dragState || textEditor) { scheduleAutosave(); return; }
 			void onSaveClick();
 		}, C.AUTOSAVE_DEBOUNCE_MS);
 	}
@@ -1576,7 +1579,6 @@
 			hiddenNodes: [],
 			onCommit: typeof onCommit === 'function' ? onCommit : null,
 			focusHandle: null,
-			initialHeightPx: heightPx,
 			centerClientY: wrapperCenterClientY,
 		};
 
@@ -1613,10 +1615,12 @@
 
 	/**
 	 * Resizes the shape/line label editor to fit its content. The textarea
-	 * grows to its scrollHeight; the wrapper grows in lockstep, expanding
-	 * symmetrically around the original anchor point so the editable block
-	 * stays centered on the label's position while typing. No max cap: long
-	 * captions get a tall editor instead of clipping.
+	 * collapses to exactly its content height (no minimum floor), and the
+	 * wrapper is re-anchored around the original midpoint so the first
+	 * line of the editable text lands on the same baseline the rendered
+	 * label uses. Without this exact fit, an empty textarea would be
+	 * taller than its single visible line and the text would appear
+	 * offset upwards compared to its final on-canvas position.
 	 */
 	function autoResizeShapeLabelTextarea() {
 		if (!textEditor) return;
@@ -1625,17 +1629,14 @@
 		const wrapper = textEditor.wrapper;
 		if (!wrapper) return;
 
-		// Measure intrinsic content height of the textarea.
+		// Measure intrinsic content height of the textarea exactly.
 		ta.style.height = 'auto';
-		const contentH = ta.scrollHeight;
-		// Wrapper height = max(initial bbox height, content height) so the
-		// editor never shrinks below the original anchor box, but grows
-		// freely for multi-line content.
-		const nextH = Math.max(textEditor.initialHeightPx || contentH, contentH);
+		const nextH = ta.scrollHeight;
 		ta.style.height = `${nextH}px`;
 		wrapper.style.height = `${nextH}px`;
 		// Re-anchor: keep the wrapper visually centered on its original
-		// midpoint so growth happens symmetrically (half up, half down).
+		// midpoint so growth/shrink happens symmetrically (half up, half down)
+		// and the first line stays glued to the label's anchor point.
 		wrapper.style.top = `${textEditor.centerClientY - nextH / 2}px`;
 	}
 
