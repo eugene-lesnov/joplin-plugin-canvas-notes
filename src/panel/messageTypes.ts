@@ -21,7 +21,18 @@ export interface ErrorMessage {
 	message: string;
 }
 
-export type BackendToWebview = LoadCanvasMessage | ErrorMessage;
+/**
+ * Asks the webview to commit any in-flight edits and flush pending
+ * dirty state to disk BEFORE the backend swaps the active note. The
+ * webview must reply with a matching {@link FlushAckMessage} carrying
+ * the same `requestId`. Used to prevent data loss on note switch.
+ */
+export interface FlushBeforeReloadMessage {
+	type: 'flushBeforeReload';
+	requestId: string;
+}
+
+export type BackendToWebview = LoadCanvasMessage | ErrorMessage | FlushBeforeReloadMessage;
 
 // ---- webview -> backend ----------------------------------------------------
 
@@ -65,6 +76,19 @@ export interface GetNoteSummaryMessage {
 	noteId: string;
 }
 
+/**
+ * Acknowledges {@link FlushBeforeReloadMessage}. `ok` reports whether
+ * the webview managed to commit and save the in-flight document. Even
+ * on `ok: false` the backend proceeds with the load to avoid getting
+ * the editor stuck — the failure is reported separately.
+ */
+export interface FlushAckMessage {
+	type: 'flushAck';
+	requestId: string;
+	ok: boolean;
+	error?: string;
+}
+
 export type WebviewToBackend =
 	| ReadyMessage
 	| SaveCanvasMessage
@@ -72,7 +96,8 @@ export type WebviewToBackend =
 	| SearchNotesMessage
 	| AddElementMessage
 	| CheckLinkedNotesMessage
-	| GetNoteSummaryMessage;
+	| GetNoteSummaryMessage
+	| FlushAckMessage;
 
 // ---- response shapes -------------------------------------------------------
 

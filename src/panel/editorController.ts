@@ -71,7 +71,28 @@ interface EditorInstanceState {
 	ready: boolean;
 	pendingLoad: ActiveCanvas | null;
 	active: ActiveCanvas | null;
+	/**
+	 * In-flight flush handshakes keyed by requestId. The webview replies
+	 * with `flushAck` after committing/saving pending edits; we resolve
+	 * the matching promise so the reload can proceed without data loss.
+	 */
+	pendingFlushes: Map<string, (result: { ok: boolean; error?: string }) => void>;
+	/**
+	 * Serializes load requests so two `onUpdate` events arriving in quick
+	 * succession do not race each other (e.g. fast note switching). Each
+	 * new load chains onto the previous one's promise.
+	 */
+	loadQueue: Promise<void>;
 }
+
+/**
+ * Maximum time we wait for the webview to ack a flush request. After
+ * the deadline we proceed with the reload anyway: blocking forever on a
+ * dead webview would lock the editor on every note switch.
+ */
+const FLUSH_TIMEOUT_MS = 3000;
+
+let flushRequestCounter = 0;
 
 const instances = new Map<ViewHandle, EditorInstanceState>();
 
@@ -95,11 +116,51 @@ function postError(state: EditorInstanceState, message: string): void {
 }
 
 /**
+ * Asks the webview to commit any in-flight edits and persist pending
+ * dirty state. Resolves once the webview replies, or after a timeout if
+ * the webview is unresponsive. The caller is expected to proceed in
+ * either case — blocking the reload would strand the editor.
+ */
+function requestFlush(state: EditorInstanceState): Promise<{ ok: boolean; error?: string }> {
+	if (!state.ready || !state.active) return Promise.resolve({ ok: true });
+	const requestId = `flush-${++flushRequestCounter}`;
+	return new Promise((resolve) => {
+		const timer = setTimeout(() => {
+			if (state.pendingFlushes.delete(requestId)) {
+				// eslint-disable-next-line no-console
+				console.warn('[Canvas Notes] flush ack timed out; proceeding with reload');
+				resolve({ ok: false, error: 'flush timeout' });
+			}
+		}, FLUSH_TIMEOUT_MS);
+		state.pendingFlushes.set(requestId, (result) => {
+			clearTimeout(timer);
+			resolve(result);
+		});
+		postToWebview(state, { type: 'flushBeforeReload', requestId });
+	});
+}
+
+/**
  * Loads the canvas for a note and forwards it to the webview.
+ *
+ * Before swapping the active canvas we ask the webview to flush any
+ * unsaved edits (autosave debounce, open text overlay, dirty state).
+ * The flush ack carries the final `saveCanvas` for the previous note;
+ * since `setActiveDoc` runs through the router, the save lands on the
+ * OLD `state.active` — it's safe to swap to the new one only after the
+ * ack returns. On timeout we still proceed: a stuck webview must not
+ * brick note switching.
+ *
  * Errors stay non-fatal: the editor view receives an error message and
  * remains alive so the user can switch to a different note.
  */
-async function loadAndPushCanvas(state: EditorInstanceState, noteId: string): Promise<void> {
+async function doLoadAndPushCanvas(state: EditorInstanceState, noteId: string): Promise<void> {
+	const flushResult = await requestFlush(state);
+	if (!flushResult.ok && flushResult.error) {
+		// eslint-disable-next-line no-console
+		console.warn('[Canvas Notes] flush before reload failed:', flushResult.error);
+	}
+
 	try {
 		const result = await loadCanvasForNote(noteId);
 		if (result.ok === false) {
@@ -121,6 +182,41 @@ async function loadAndPushCanvas(state: EditorInstanceState, noteId: string): Pr
 		// eslint-disable-next-line no-console
 		console.error('[Canvas Notes] loadAndPushCanvas failed:', e);
 	}
+}
+
+/**
+ * Public entry: schedules a load through the instance's serial queue.
+ * The queue prevents two concurrent `onUpdate` events (e.g. user
+ * switching notes back-to-back) from racing each other; ordering is
+ * preserved and each load sees the result of the previous flush.
+ *
+ * Не сокращаем по "та же нота" — повторный вход в ту же ноту после
+ * переключения на другую и обратно должен сбросить sticky-error
+ * баннер и вернуть актуальное содержимое.
+ */
+function loadAndPushCanvas(state: EditorInstanceState, noteId: string): Promise<void> {
+	const next = state.loadQueue.then(() => doLoadAndPushCanvas(state, noteId));
+	// Цепь не должна рваться из-за unhandled rejection: doLoadAndPushCanvas
+	// уже ловит свои ошибки, но на всякий случай глотаем оставшиеся.
+	state.loadQueue = next.catch(() => { /* ignore */ });
+	return next;
+}
+
+/**
+ * Triggers flush handshakes for every editor instance that currently has
+ * an active canvas. Used on note-selection changes to ensure dirty
+ * state is persisted BEFORE Joplin tears down the canvas editor (e.g.
+ * when switching to a non-canvas note: `onUpdate` is NOT fired, so the
+ * editor instance loses access to the webview without flush).
+ */
+export async function flushAllActiveCanvases(): Promise<void> {
+	const flushes: Promise<unknown>[] = [];
+	for (const state of instances.values()) {
+		if (!state.ready || !state.active) continue;
+		flushes.push(requestFlush(state));
+	}
+	if (flushes.length === 0) return;
+	await Promise.all(flushes);
 }
 
 // ---- onSetup: wire a freshly created editor instance -----------------------
@@ -145,6 +241,12 @@ function buildMessageContext(state: EditorInstanceState): MessageContext {
 				postLoadCanvas(state, toSend);
 			}
 		},
+		resolveFlushAck: (requestId, ok, error) => {
+			const resolver = state.pendingFlushes.get(requestId);
+			if (!resolver) return;
+			state.pendingFlushes.delete(requestId);
+			resolver({ ok, error });
+		},
 	};
 }
 
@@ -154,6 +256,8 @@ async function onSetup(handle: ViewHandle): Promise<void> {
 		ready: false,
 		pendingLoad: null,
 		active: null,
+		pendingFlushes: new Map(),
+		loadQueue: Promise.resolve(),
 	};
 	instances.set(handle, state);
 

@@ -95,6 +95,117 @@
 	/** Active text-editing overlay state, or null when no element is being edited. */
 	let textEditor = null;
 
+	// --- undo/redo history --------------------------------------------------
+
+	/**
+	 * Максимальная глубина истории. 20 шагов достаточно для базового UX
+	 * и не раздувает память: даже при ~1KB на элемент и 100 элементах
+	 * это около 2MB на полный стек.
+	 */
+	const HISTORY_LIMIT = 20;
+
+	/** @type {Array<object>} snapshot-стек состояний doc до последних мутаций */
+	let undoStack = [];
+	/** @type {Array<object>} snapshot-стек состояний doc для повтора отменённого */
+	let redoStack = [];
+	/** Флаг подавляет запись истории во время restore (undo/redo). */
+	let isRestoring = false;
+
+	function snapshotDoc() {
+		if (!doc) return null;
+		// structuredClone доступен в современных webview (Chromium); JSON-fallback
+		// сохраняет совместимость и одинаково корректен для plain-data doc.
+		try {
+			if (typeof structuredClone === 'function') return structuredClone(doc);
+		} catch (_) { /* fallthrough */ }
+		return JSON.parse(JSON.stringify(doc));
+	}
+
+	/**
+	 * Снимает текущее состояние doc и кладёт в undoStack. Любая
+	 * пользовательская мутация должна звать это ДО изменения doc.
+	 * Очищает redoStack: новый путь действий обнуляет ветку "вперёд".
+	 */
+	function recordHistory() {
+		if (isRestoring || !doc) return;
+		const snap = snapshotDoc();
+		if (!snap) return;
+		undoStack.push(snap);
+		if (undoStack.length > HISTORY_LIMIT) undoStack.shift();
+		if (redoStack.length > 0) redoStack = [];
+	}
+
+	/**
+	 * Коммит заранее снятого snapshot. Используется, когда не известно
+	 * заранее, будет ли мутация, или когда жест подразумевает одно
+	 * логическое изменение на множество вызовов обновления.
+	 */
+	function commitHistory(snap) {
+		if (isRestoring || !snap) return;
+		undoStack.push(snap);
+		if (undoStack.length > HISTORY_LIMIT) undoStack.shift();
+		if (redoStack.length > 0) redoStack = [];
+	}
+
+	function clearHistory() {
+		undoStack = [];
+		redoStack = [];
+	}
+
+	/**
+	 * Заменяет текущий doc на snapshot. Не пишет в историю, сбрасывает
+	 * dragState и selection (id могут отсутствовать в восстановленном
+	 * наборе элементов), пересчитывает рендер.
+	 */
+	function applySnapshot(snap) {
+		isRestoring = true;
+		try {
+			doc = snap;
+			dragState = null;
+			// Сохраняем только те id selection, что ещё есть в doc.
+			if (selectedIds.size > 0) {
+				const alive = new Set();
+				for (const e of doc.elements) {
+					if (selectedIds.has(e.id)) alive.add(e.id);
+				}
+				selectedIds = alive;
+			}
+			markDirty();
+			render();
+		} finally {
+			isRestoring = false;
+		}
+	}
+
+	function undo() {
+		if (undoStack.length === 0 || !doc) return;
+		// In-flight overlay-редактор должен быть закрыт без commit -
+		// иначе зависшее значение может перезаписать восстановленное.
+		if (textEditor) closeTextOverlayEditor('cancel');
+		const current = snapshotDoc();
+		const snap = undoStack.pop();
+		if (current) {
+			redoStack.push(current);
+			if (redoStack.length > HISTORY_LIMIT) redoStack.shift();
+		}
+		applySnapshot(snap);
+	}
+
+	function redo() {
+		if (redoStack.length === 0 || !doc) return;
+		if (textEditor) closeTextOverlayEditor('cancel');
+		const current = snapshotDoc();
+		const snap = redoStack.pop();
+		if (current) {
+			undoStack.push(current);
+			if (undoStack.length > HISTORY_LIMIT) undoStack.shift();
+		}
+		applySnapshot(snap);
+	}
+
+	function canUndo() { return undoStack.length > 0; }
+	function canRedo() { return redoStack.length > 0; }
+
 	// --- text size controls -------------------------------------------------
 
 	const TEXT_FONT_SIZE_MIN = 8;
@@ -207,12 +318,17 @@
 
 		pendingTextFontSize = next;
 
+		// Один логический шаг на потенциально две мутации (selected + editing).
+		// Snapshot снимаем один раз и commitим, если хотя бы одна ветка изменила doc.
+		const snap = snapshotDoc();
+		let anyChanged = false;
+
 		const sel = getSelectedTextElement();
 		if (sel) {
 			const changed = mapElement(sel.id, (e) =>
 				Object.assign({}, e, { fontSize: next }));
 			if (changed) {
-				markDirty();
+				anyChanged = true;
 				render();
 			}
 		}
@@ -226,11 +342,16 @@
 				const changed = mapElement(editing.id, (e) =>
 					Object.assign({}, e, { fontSize: next }));
 				if (changed) {
-					markDirty();
+					anyChanged = true;
 					render();
 				}
 			}
 			syncTextEditorFontSize(textEditor.elementId, next);
+		}
+
+		if (anyChanged) {
+			commitHistory(snap);
+			markDirty();
 		}
 
 		refreshFontSizePopover();
@@ -246,6 +367,7 @@
 		const matchType = (e) => kind === 'lineLabel'
 			? (e.type === 'arrow' || e.type === 'line')
 			: isLabeledShape(e.type);
+		const snap = snapshotDoc();
 		const changed = mapElement(elementId, (e) => {
 			if (!matchType(e)) return e;
 			const prev = e.label || defaults;
@@ -254,6 +376,7 @@
 			return Object.assign({}, e, { label: nextLabel });
 		});
 		if (!changed) return;
+		commitHistory(snap);
 		markDirty();
 		render();
 	}
@@ -333,6 +456,11 @@
 
 		const delBtn = $('btn-delete');
 		if (delBtn) delBtn.disabled = !hasSelection();
+
+		const undoBtn = $('btn-undo');
+		if (undoBtn) undoBtn.disabled = !doc || !canUndo();
+		const redoBtn = $('btn-redo');
+		if (redoBtn) redoBtn.disabled = !doc || !canRedo();
 
 		const zoomReset = $('btn-zoom-reset');
 		if (zoomReset) zoomReset.textContent = `${Math.round(zoom * 100)}%`;
@@ -471,6 +599,7 @@
 	// --- mutation helpers ---------------------------------------------------
 
 	function addElement(el) {
+		recordHistory();
 		doc = Object.assign({}, doc, { elements: doc.elements.concat([el]) });
 		setSelectionSingle(el.id);
 		markDirty();
@@ -482,6 +611,7 @@
 
 	function deleteElement(id) {
 		if (!id) return;
+		recordHistory();
 		doc = Object.assign({}, doc, { elements: doc.elements.filter((e) => e.id !== id) });
 		selectedIds.delete(id);
 		markDirty();
@@ -491,6 +621,7 @@
 	/** Удаляет все выделенные элементы за одну операцию. */
 	function deleteSelectedElements() {
 		if (!hasSelection() || !doc) return;
+		recordHistory();
 		const toDelete = selectedIds;
 		doc = Object.assign({}, doc, {
 			elements: doc.elements.filter((e) => !toDelete.has(e.id)),
@@ -578,6 +709,7 @@
 	 */
 	function pasteFromClipboard(anchorDoc) {
 		if (!doc || !clipboardHasContent()) return false;
+		recordHistory();
 		const src = clipboard.elements;
 		const cloned = JSON.parse(JSON.stringify(src));
 
@@ -868,6 +1000,7 @@
 				initialW: doc.width,
 				initialH: doc.height,
 				startDocX: p.x, startDocY: p.y,
+				preSnapshot: snapshotDoc(),
 			};
 			return;
 		}
@@ -1031,6 +1164,7 @@
 					initial: cloneElement(sel),
 					startDocX: p.x, startDocY: p.y,
 					resizeOpts: computeResizeOpts(sel),
+					preSnapshot: snapshotDoc(),
 				};
 				return;
 			}
@@ -1058,6 +1192,7 @@
 				moveIds: Array.from(selectedIds),
 				startDocX: p.x, startDocY: p.y,
 				startClientX: evt.clientX, startClientY: evt.clientY,
+				preSnapshot: snapshotDoc(),
 			};
 			const node = svg();
 			if (node) node.style.cursor = 'grabbing';
@@ -1187,6 +1322,8 @@
 			case 'resizing-canvas':
 			case 'moving':
 			case 'resizing':
+				// Жест реально изменил doc — коммитим состояние ДО жеста в undo.
+				if (finished.preSnapshot) commitHistory(finished.preSnapshot);
 				markDirty();
 				return;
 			case 'multi-selecting': {
@@ -1340,6 +1477,20 @@
 		// own keys and we don't want Delete to wipe the element being edited.
 		if (textEditor) return;
 
+		// Undo / Redo. Работают только на holstе - в вводе/текстовом
+		// overlay нативный undo браузера обрабатывает эти комбинации.
+		if ((evt.ctrlKey || evt.metaKey) && (evt.key === 'z' || evt.key === 'Z')) {
+			evt.preventDefault();
+			if (evt.shiftKey) redo();
+			else undo();
+			return;
+		}
+		if ((evt.ctrlKey || evt.metaKey) && (evt.key === 'y' || evt.key === 'Y')) {
+			evt.preventDefault();
+			redo();
+			return;
+		}
+
 		if (evt.code === 'Space' && !spaceDown) {
 			spaceDown = true;
 			evt.preventDefault();
@@ -1466,6 +1617,7 @@
 	 */
 	function zOrderMany(ids, where) {
 		if (!doc || !ids || ids.length === 0) return;
+		recordHistory();
 		const set = ids instanceof Set ? ids : new Set(ids);
 		const zs = doc.elements.map((e) => e.z);
 		const maxZ = zs.length ? Math.max.apply(null, zs) : 0;
@@ -1494,6 +1646,13 @@
 	}
 
 	async function openCardLink(card) {
+		// Persist the current canvas before navigating away — без этого
+		// dirty-state и в флигхт text overlay пропали бы в backend-flush,
+		// но лучше сохранить синхронно и видеть ошибку до перехода.
+		if (isDirty()) {
+			await onSaveClick();
+			if (saveState === 'error') return;
+		}
 		const res = await postMessage({ type: 'openLinkedNote', noteId: card.noteId });
 		if (res && res.ok === false) {
 			markCardBroken(card.id, true);
@@ -1504,6 +1663,7 @@
 	/** Moves an element to the very top or very bottom in z-order. */
 	function zOrder(elementId, where) {
 		if (!doc) return;
+		recordHistory();
 		const zs = doc.elements.map((e) => e.z);
 		const maxZ = zs.length ? Math.max.apply(null, zs) : 0;
 		const minZ = zs.length ? Math.min.apply(null, zs) : 0;
@@ -1535,16 +1695,22 @@
 		if (!message || typeof message !== 'object') return;
 		switch (message.type) {
 			case 'loadCanvas':
-				// A reload swaps the document under our feet; abandon any
-				// in-flight text edit to avoid writing into a stale element.
-				if (textEditor) closeTextOverlayEditor('cancel');
+				// К этому моменту backend уже провёл flushBeforeReload-
+				// handshake и мы успели сохранить предыдущий документ.
+				// commit (а не cancel) служит страховкой на случай, если
+				// loadCanvas пришёл в обход handshake (timeout) — в худшем
+				// случае это просто оставляет markDirty (перехвачен ниже).
+				if (textEditor) closeTextOverlayEditor('commit');
 				noteId = message.noteId;
 				resourceId = message.resourceId;
 				doc = message.doc;
 				selectedIds = new Set();
-				// Новый документ - буфер и якоря вставки из предыдущего
-				// контекста больше не имеют смысла.
+				// Новый документ - буфер, якоря вставки, история и
+				// ожидающий autosave из предыдущего контекста больше
+				// не имеют смысла и могут перезаписать новую ноту.
 				clipboard = null;
+				clearHistory();
+				if (autosaveHandle) { clearTimeout(autosaveHandle); autosaveHandle = null; }
 				lastPointerDoc = null;
 				contextMenuPasteAnchor = null;
 				saveState = 'idle';
@@ -1553,6 +1719,9 @@
 				if (canvasFit) canvasFit.start(doc);
 				render();
 				void validateLinkedCards();
+				break;
+			case 'flushBeforeReload':
+				void handleFlushBeforeReload(message.requestId);
 				break;
 			case 'error':
 				showError(message.message || t('errorUnknown', 'Unknown error'));
@@ -1563,6 +1732,52 @@
 			default:
 				console.warn('[Canvas Notes] unknown backend message:', message);
 		}
+	}
+
+	/**
+	 * Обрабатывает запрос backend на flush перед сменой ноты: фиксирует
+	 * открытый text overlay, ждёт завершения текущего save из autosave,
+	 * при dirty сохраняет документ в ресурс СТАРОЙ ноты (backend ещё
+	 * не подменил active) и отвечает flushAck.
+	 */
+	async function handleFlushBeforeReload(requestId) {
+		let ok = true;
+		let error = null;
+		try {
+			if (textEditor) closeTextOverlayEditor('commit');
+			if (autosaveHandle) { clearTimeout(autosaveHandle); autosaveHandle = null; }
+			// Если сейчас идёт autosave - дождёмся его завершения, иначе
+			// onSaveClick() вернётся раньше из-за ranнего return по saveState.
+			await waitForSaveSlot();
+			if (isDirty()) {
+				await onSaveClick();
+				if (saveState === 'error') {
+					ok = false;
+					error = lastError || 'save failed';
+				}
+			}
+		} catch (e) {
+			ok = false;
+			error = (e && e.message) ? e.message : String(e);
+		}
+		void postMessage({ type: 'flushAck', requestId, ok, error: error || undefined });
+	}
+
+	/**
+	 * Ожидает, пока флаг saveState перестанет быть 'saving'. Ограничено
+	 * жёстким дедлайном — backend-flush-handshake всё равно имеет свой timeout,
+	 * зависать здесь бесполезно.
+	 */
+	function waitForSaveSlot() {
+		if (saveState !== 'saving') return Promise.resolve();
+		return new Promise((resolve) => {
+			const deadline = Date.now() + 2500;
+			const tick = () => {
+				if (saveState !== 'saving' || Date.now() >= deadline) return resolve();
+				setTimeout(tick, 30);
+			};
+			tick();
+		});
 	}
 
 	async function onSaveClick() {
@@ -2127,11 +2342,13 @@
 	}
 
 	function updateTextValue(elementId, nextText) {
+		const snap = snapshotDoc();
 		const changed = mapElement(elementId, (e) => {
 			if (e.type !== 'text') return e;
 			return Object.assign({}, e, { text: nextText });
 		});
 		if (!changed) return;
+		commitHistory(snap);
 		markDirty();
 		render();
 	}
@@ -2141,6 +2358,7 @@
 	 * updateShapeLabelText but uses the line-label default schema.
 	 */
 	function updateLineLabelText(elementId, nextText) {
+		const snap = snapshotDoc();
 		const changed = mapElement(elementId, (e) => {
 			if (e.type !== 'arrow' && e.type !== 'line') return e;
 			const prev = e.label || DEFAULT_LINE_LABEL;
@@ -2149,6 +2367,7 @@
 			return Object.assign({}, e, { label: nextLabel });
 		});
 		if (!changed) return;
+		commitHistory(snap);
 		markDirty();
 		render();
 	}
@@ -2159,6 +2378,7 @@
 	 * future-proofs against hand-edited JSON.
 	 */
 	function updateShapeLabelText(elementId, nextText) {
+		const snap = snapshotDoc();
 		const changed = mapElement(elementId, (e) => {
 			if (!isLabeledShape(e.type)) return e;
 			const prev = e.label || DEFAULT_SHAPE_LABEL;
@@ -2167,6 +2387,7 @@
 			return Object.assign({}, e, { label: nextLabel });
 		});
 		if (!changed) return;
+		commitHistory(snap);
 		markDirty();
 		render();
 	}
@@ -2272,6 +2493,10 @@
 		if (delBtn) delBtn.addEventListener('click', onDeleteClick);
 		const addNoteBtn = $('btn-add-note');
 		if (addNoteBtn) addNoteBtn.addEventListener('click', onAddNoteClick);
+		const undoBtn = $('btn-undo');
+		if (undoBtn) undoBtn.addEventListener('click', () => undo());
+		const redoBtn = $('btn-redo');
+		if (redoBtn) redoBtn.addEventListener('click', () => redo());
 
 		const zoomIn = $('btn-zoom-in');
 		if (zoomIn) zoomIn.addEventListener('click', () => setZoom(zoom * C.ZOOM_STEP));

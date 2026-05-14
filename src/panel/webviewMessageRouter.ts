@@ -27,6 +27,8 @@ export interface MessageContext {
 	setActiveDoc(doc: CanvasDocument): void;
 	/** Marks the webview as ready to receive `loadCanvas` messages. */
 	markReady(): void;
+	/** Routes a flush ack back to the pending flush-before-reload promise. */
+	resolveFlushAck(requestId: string, ok: boolean, error?: string): void;
 }
 
 /** Public entry: handle a message and return a response to the webview. */
@@ -51,6 +53,10 @@ async function dispatch(
 	switch (message.type) {
 		case 'ready':
 			ctx.markReady();
+			return { ok: true };
+
+		case 'flushAck':
+			ctx.resolveFlushAck(message.requestId, message.ok, message.error);
 			return { ok: true };
 
 		case 'saveCanvas': {

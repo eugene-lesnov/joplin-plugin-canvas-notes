@@ -2,7 +2,7 @@ import joplin from 'api';
 import { MenuItemLocation } from 'api/types';
 import { registerCreateCanvasNoteCommand } from './commands/createCanvasNoteCommand';
 import { registerOpenCanvasCommand } from './commands/openCanvasCommand';
-import { registerCanvasEditor } from './panel/editorController';
+import { flushAllActiveCanvases, registerCanvasEditor } from './panel/editorController';
 import strings, { setLocale } from './i18n/localization';
 
 // Plugin-wide command identifiers
@@ -34,6 +34,18 @@ joplin.plugins.register({
 		// 1. Register the editor view (joplin.views.editors).
 		//    It activates automatically for notes that match isCanvasNoteBody.
 		await registerCanvasEditor();
+
+		// 1a. Flush dirty canvas state on ANY note-selection change.
+		//
+		//     Joplin invokes `onUpdate` only when switching BETWEEN canvas
+		//     notes; switching to a non-canvas note hides the editor without
+		//     firing `onUpdate`, so the webview loses its only chance to save
+		//     pending dirty state (autosave debounce, open text overlay).
+		//     This hook closes that gap by triggering the flush handshake
+		//     on every selection change.
+		await joplin.workspace.onNoteSelectionChange(() => {
+			void flushAllActiveCanvases();
+		});
 
 		// 2. Register backend commands.
 		await registerCreateCanvasNoteCommand(CMD_CREATE_CANVAS_NOTE);
