@@ -1,6 +1,8 @@
 {
   "name": "joplin-plugin-canvas-notes",
-  "version": "1.0.0",
+  "version": "0.8.0",
+  "description": "Turn a note into an interactive canvas",
+  "author": "Eugene Lesnov",
   "scripts": {
     "dist": "webpack --env joplin-plugin-config=buildMain && webpack --env joplin-plugin-config=buildExtraScripts && webpack --env joplin-plugin-config=createArchive",
     "prepare": "npm run dist",
@@ -15,6 +17,10 @@
   "files": [
     "publish"
   ],
+  "homepage": "https://github.com/eugene-lesnov/joplin-plugin-canvas-notes",
+  "repository": {
+    "url": "https://github.com/eugene-lesnov/joplin-plugin-canvas-notes"
+  },
   "devDependencies": {
     "@types/node": "^18.7.13",
     "chalk": "^4.1.0",
