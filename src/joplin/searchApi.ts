@@ -10,6 +10,13 @@
 import joplin from 'api';
 
 const SEARCH_FIELDS = ['id', 'title', 'is_todo', 'todo_completed'];
+/**
+ * `getNoteSummaryById` additionally requests `deleted_time` so the
+ * caller can distinguish "note exists" from "note is in the trash".
+ * The Joplin `/search` endpoint excludes trashed notes by default, so
+ * we only need this field on the direct note fetch.
+ */
+const SUMMARY_FIELDS = [...SEARCH_FIELDS, 'deleted_time'];
 const DEFAULT_LIMIT = 20;
 /**
  * How many recent notes to scan for the title-substring pass. The pass
@@ -31,6 +38,8 @@ export interface NoteSearchItem {
 /** Full summary of a note used to materialize a canvas card. */
 export interface NoteFullSummary extends NoteSearchItem {
 	tags: string[];
+	/** True when the note is in Joplin's trash (deleted_time > 0). */
+	isTrashed: boolean;
 }
 
 interface RawSearchItem {
@@ -38,6 +47,7 @@ interface RawSearchItem {
 	title: string;
 	is_todo: number;
 	todo_completed: number;
+	deleted_time?: number;
 }
 
 interface RawTagItem {
@@ -164,15 +174,20 @@ export async function getNoteSummaryById(noteId: string): Promise<NoteFullSummar
 	if (!noteId) return null;
 	try {
 		const raw: RawSearchItem = await joplin.data.get(['notes', noteId], {
-			fields: SEARCH_FIELDS,
+			fields: SUMMARY_FIELDS,
 		});
 		if (!raw || !raw.id) return null;
 		const tags = await fetchNoteTags(noteId);
-		return { ...toItem(raw), tags };
+		return { ...toItem(raw), tags, isTrashed: isTrashedRaw(raw) };
 	} catch {
 		// Joplin returns 404 for missing notes; treat any error as "missing".
 		return null;
 	}
+}
+
+/** True when Joplin marks the note as soft-deleted (in trash). */
+function isTrashedRaw(raw: RawSearchItem): boolean {
+	return typeof raw.deleted_time === 'number' && raw.deleted_time > 0;
 }
 
 /**

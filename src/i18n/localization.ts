@@ -33,6 +33,7 @@ export interface AppLocalization {
 	// webviewMessageRouter.ts errors
 	errorNoActiveCanvas: string;
 	errorLinkedNoteMissing: string;
+	errorLinkedNoteTrashed: string;
 	errorUnknownMessage: string;
 
 	// editorController.ts errors
@@ -42,6 +43,8 @@ export interface AppLocalization {
 	cardTypeNote: string;
 	cardTypeTask: string;
 	cardTypeTaskDone: string;
+	cardBrokenLink: string;
+	cardTrashed: string;
 }
 
 const PLACEHOLDER_PATTERN = /\{\{\s*([A-Za-z0-9_]+)\s*\}\}/g;
@@ -66,6 +69,7 @@ const defaultStrings: AppLocalization = {
 
 	errorNoActiveCanvas: "No active canvas to save into",
 	errorLinkedNoteMissing: "Linked note no longer exists",
+	errorLinkedNoteTrashed: "Linked note is in the trash",
 	errorUnknownMessage: "Unknown message: {{message}}",
 
 	errorLoadCanvasFailed: "Failed to load canvas: {{reason}}",
@@ -73,6 +77,8 @@ const defaultStrings: AppLocalization = {
 	cardTypeNote: "Note",
 	cardTypeTask: "Task",
 	cardTypeTaskDone: "Task (done)",
+	cardBrokenLink: "broken link",
+	cardTrashed: "in trash",
 };
 
 const localizations: Record<string, Partial<AppLocalization>> = {
@@ -96,6 +102,7 @@ const localizations: Record<string, Partial<AppLocalization>> = {
 
 		errorNoActiveCanvas: "Нет активного Canvas для сохранения",
 		errorLinkedNoteMissing: "Связанная заметка больше не существует",
+		errorLinkedNoteTrashed: "Связанная заметка находится в корзине",
 		errorUnknownMessage: "Неизвестное сообщение: {{message}}",
 
 		errorLoadCanvasFailed: "Не удалось загрузить Canvas: {{reason}}",
@@ -103,6 +110,8 @@ const localizations: Record<string, Partial<AppLocalization>> = {
 		cardTypeNote: "Заметка",
 		cardTypeTask: "Задача",
 		cardTypeTaskDone: "Задача (выполнена)",
+		cardBrokenLink: "связь нарушена",
+		cardTrashed: "в корзине",
 	},
 };
 

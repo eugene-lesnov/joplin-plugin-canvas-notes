@@ -1655,7 +1655,9 @@
 		}
 		const res = await postMessage({ type: 'openLinkedNote', noteId: card.noteId });
 		if (res && res.ok === false) {
-			markCardBroken(card.id, true);
+			// Trashed cards are reported as a distinct status by
+			// validateLinkedCards; don't overwrite that with `broken`.
+			if (!card.trashed) markCardBroken(card.id, true);
 			showError((res && res.error) || t('errorOpenLinkedNote', 'Failed to open linked note'));
 		}
 	}
@@ -1906,7 +1908,7 @@
 		}
 		const res = await postMessage({ type: 'openLinkedNote', noteId: hit.noteId });
 		if (!res || !res.ok) {
-			markCardBroken(hit.id, true);
+			if (!hit.trashed) markCardBroken(hit.id, true);
 			showError((res && res.error) || t('errorOpenLinkedNote', 'Failed to open linked note'));
 		}
 	}
@@ -2435,8 +2437,13 @@
 			let next = e;
 			if (!status.exists) {
 				if (!e.broken) { next = Object.assign({}, next, { broken: true }); changed = true; }
+				if (e.trashed) { next = Object.assign({}, next, { trashed: false }); changed = true; }
 			} else {
 				if (e.broken) { next = Object.assign({}, next, { broken: false }); changed = true; }
+				const trashed = !!status.isTrashed;
+				if (!!e.trashed !== trashed) {
+					next = Object.assign({}, next, { trashed }); changed = true;
+				}
 				if (typeof status.title === 'string' && status.title !== e.title) {
 					next = Object.assign({}, next, { title: status.title }); changed = true;
 				}

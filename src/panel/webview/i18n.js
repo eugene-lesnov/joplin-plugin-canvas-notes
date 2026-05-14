@@ -157,7 +157,8 @@
 
 		// Renderer
 		cardUntitled: '(untitled)',
-		cardBrokenLink: 'broken link',
+		cardBrokenLink: 'Broken link',
+		cardTrashed: 'In trash',
 		cardTypeNote: 'Note',
 		cardTypeTask: 'Task',
 		cardTypeTaskDone: 'Task (done)',
@@ -293,7 +294,8 @@
 			promptOk: 'OK',
 
 			cardUntitled: '(без названия)',
-			cardBrokenLink: 'связь нарушена',
+			cardBrokenLink: 'Связь нарушена',
+			cardTrashed: 'В корзине',
 			cardTypeNote: 'Заметка',
 			cardTypeTask: 'Задача',
 			cardTypeTaskDone: 'Задача (выполнена)',

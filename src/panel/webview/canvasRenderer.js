@@ -416,22 +416,29 @@
 		});
 	}
 
+	// Cards with a missing or trashed link share the same muted visual
+	// style; only the bottom-right status label differs.
+	function isCardUnreachable(e) {
+		return !!(e.broken || e.trashed);
+	}
+
 	function cardTitleColor(e) {
-		if (e.broken) return '#b00020';
+		if (isCardUnreachable(e)) return '#b00020';
 		if (e.type === 'todoCard') return e.completed ? '#7ab87a' : '#e2a64a';
 		return '#4a90e2';
 	}
 
 	function renderCard(e) {
 		const g = el('g');
+		const unreachable = isCardUnreachable(e);
 
 		const body = el('rect', {
 			x: e.x, y: e.y, width: e.w, height: e.h, rx: 6,
-			fill: e.broken ? '#fff4f5' : '#ffffff',
-			stroke: e.broken ? '#b00020' : '#cccccc',
+			fill: unreachable ? '#fff4f5' : '#ffffff',
+			stroke: unreachable ? '#b00020' : '#cccccc',
 			'stroke-width': 1,
 		});
-		if (e.broken) body.setAttribute('stroke-dasharray', '5 3');
+		if (unreachable) body.setAttribute('stroke-dasharray', '5 3');
 		g.appendChild(body);
 
 		g.appendChild(el('rect', {
@@ -456,12 +463,16 @@
 
 		appendCardBody(g, e);
 
-		if (e.broken) {
+		if (unreachable) {
 			const note = el('text', {
 				x: e.x + CARD_TITLE_PAD_X, y: e.y + e.h - 10,
 				'font-size': 11, 'font-family': 'sans-serif', fill: '#b00020',
 			});
-			note.textContent = t('cardBrokenLink', 'broken link');
+			// Trash status takes priority over broken: a card the backend
+			// reports as trashed is by definition not missing.
+			note.textContent = e.trashed
+				? t('cardTrashed', 'in trash')
+				: t('cardBrokenLink', 'broken link');
 			g.appendChild(note);
 		}
 
@@ -563,7 +574,7 @@
 	 */
 	function appendTagChips(g, e, tags, startX, startY, color) {
 		const maxRight = e.x + e.w - CARD_TITLE_PAD_X;
-		const maxBottom = e.y + e.h - (e.broken ? 22 : CARD_BODY_PAD_Y);
+		const maxBottom = e.y + e.h - (isCardUnreachable(e) ? 22 : CARD_BODY_PAD_Y);
 		let rowX = startX;
 		let rowY = startY;
 		let rendered = 0;

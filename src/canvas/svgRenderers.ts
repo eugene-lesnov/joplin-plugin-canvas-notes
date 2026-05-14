@@ -410,8 +410,17 @@ function renderFreehand(e: FreehandElement): string {
 	);
 }
 
+/**
+ * A card is "unreachable" when its linked note is either missing or in
+ * the trash. Both states share the same muted style; only the bottom
+ * status label differs.
+ */
+function isCardUnreachable(e: NoteCardElement | TodoCardElement): boolean {
+	return !!(e.broken || e.trashed);
+}
+
 function cardTitleColor(e: NoteCardElement | TodoCardElement): string {
-	if (e.broken) return '#b00020';
+	if (isCardUnreachable(e)) return '#b00020';
 	if (e.type === 'todoCard') return e.completed ? '#7ab87a' : '#e2a64a';
 	return '#4a90e2';
 }
@@ -419,9 +428,9 @@ function cardTitleColor(e: NoteCardElement | TodoCardElement): string {
 function renderCard(e: NoteCardElement | TodoCardElement): string {
 	const titleY = e.y + CARD_TITLE_HEIGHT / 2 + CARD_TITLE_FONT_SIZE / 3;
 	const titleColor = cardTitleColor(e);
-	const broken = !!e.broken;
+	const unreachable = isCardUnreachable(e);
 
-	const bodyRect = broken
+	const bodyRect = unreachable
 		? `<rect x="${num(e.x)}" y="${num(e.y)}" width="${num(e.w)}" height="${num(e.h)}"` +
 		  ` rx="6" fill="#fff4f5" stroke="#b00020" stroke-width="1" stroke-dasharray="5 3"/>`
 		: `<rect x="${num(e.x)}" y="${num(e.y)}" width="${num(e.w)}" height="${num(e.h)}"` +
@@ -439,12 +448,13 @@ function renderCard(e: NoteCardElement | TodoCardElement): string {
 
 	const body = renderCardBody(e, titleColor);
 
-	const brokenLabel = broken
+	const statusLabel = unreachable
 		? `<text x="${num(e.x + CARD_TITLE_PAD_X)}" y="${num(e.y + e.h - 10)}"` +
-		  ` font-size="11" font-family="sans-serif" fill="#b00020">broken link</text>`
+		  ` font-size="11" font-family="sans-serif" fill="#b00020">` +
+		  `${safeText(e.trashed ? strings.cardTrashed : strings.cardBrokenLink)}</text>`
 		: '';
 
-	return `<g>${bodyRect}${titleRect}${titleText}${body}${brokenLabel}</g>`;
+	return `<g>${bodyRect}${titleRect}${titleText}${body}${statusLabel}</g>`;
 }
 
 function renderNoteCard(e: NoteCardElement): string {
@@ -534,7 +544,7 @@ function renderTagChips(
 	color: string,
 ): string {
 	const maxRight = e.x + e.w - CARD_TITLE_PAD_X;
-	const maxBottom = e.y + e.h - (e.broken ? 22 : CARD_BODY_PAD_Y);
+	const maxBottom = e.y + e.h - (isCardUnreachable(e) ? 22 : CARD_BODY_PAD_Y);
 	let rowX = startX;
 	let rowY = startY;
 	let rendered = 0;

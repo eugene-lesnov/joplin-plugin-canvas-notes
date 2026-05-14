@@ -296,6 +296,8 @@ export interface NoteCardElement extends BaseElement {
 	tags?: string[];
 	/** True if the linked note was missing on last validation. */
 	broken?: boolean;
+	/** True if the linked note is in Joplin's trash. */
+	trashed?: boolean;
 }
 
 /** Same as NoteCardElement but for to-do notes; tracks completion. */
@@ -312,6 +314,8 @@ export interface TodoCardElement extends BaseElement {
 	tags?: string[];
 	/** True if the linked todo was missing on last validation. */
 	broken?: boolean;
+	/** True if the linked todo is in Joplin's trash. */
+	trashed?: boolean;
 }
 
 /**

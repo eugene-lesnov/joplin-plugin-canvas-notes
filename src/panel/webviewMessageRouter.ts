@@ -71,6 +71,7 @@ async function dispatch(
 		case 'openLinkedNote': {
 			const summary = await getNoteSummaryById(message.noteId);
 			if (!summary) return { ok: false, error: strings.errorLinkedNoteMissing };
+			if (summary.isTrashed) return { ok: false, error: strings.errorLinkedNoteTrashed };
 			await openNote(message.noteId);
 			return { ok: true };
 		}
@@ -93,6 +94,7 @@ async function dispatch(
 						isTodo: s.isTodo,
 						todoCompleted: s.todoCompleted,
 						tags: s.tags,
+						isTrashed: s.isTrashed,
 					};
 				}),
 			);
@@ -111,6 +113,7 @@ async function dispatch(
 					isTodo: s.isTodo,
 					todoCompleted: s.todoCompleted,
 					tags: s.tags,
+					isTrashed: s.isTrashed,
 				},
 			};
 			return response;

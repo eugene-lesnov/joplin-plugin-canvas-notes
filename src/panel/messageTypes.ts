@@ -125,6 +125,8 @@ export interface NoteLinkStatus {
 	isTodo?: boolean;
 	todoCompleted?: boolean;
 	tags?: string[];
+	/** True when the linked note is in the Joplin trash. */
+	isTrashed?: boolean;
 }
 
 export interface CheckLinkedNotesResponse extends OperationResult {
@@ -138,5 +140,6 @@ export interface NoteSummaryResponse extends OperationResult {
 		isTodo: boolean;
 		todoCompleted: boolean;
 		tags: string[];
+		isTrashed: boolean;
 	};
 }
