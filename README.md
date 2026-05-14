@@ -1,4 +1,4 @@
-# Canvas Notes — Joplin Plugin
+# Canvas Notes
 
 A Joplin plugin that turns a note into an interactive canvas: note and task cards, links between them, free-form layout, and auto-saving to SVG.
 
@@ -6,9 +6,9 @@ A Joplin plugin that turns a note into an interactive canvas: note and task card
 
 - Create a Canvas Note with a single command (`Tools → Canvas Notes → Create Canvas Note`).
 - Visual editor with note/task cards and connections between them.
-- Drag & drop, context menu, toolbar, fit-to-content.
-- Cards linked to existing Joplin notes (opening, "in trash" state, broken link handling).
-- Localization (EN/RU), picked up from the Joplin global `locale` setting.
+- Drag & drop, context menu, toolbar.
+- Cards linked to existing Joplin notes.
+- Localization support.
 - Canvas state stored as an embedded SVG resource of the note.
 
 ## Requirements
@@ -31,4 +31,4 @@ Joplin **3.5** or newer.
 
 ## License
 
-MIT © Eugene Lesnov
+MIT
