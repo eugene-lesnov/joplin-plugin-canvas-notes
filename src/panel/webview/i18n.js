@@ -122,7 +122,6 @@
 		toolSubgroupArchitecture: 'Architecture',
 		toolSubgroupDevices: 'Devices',
 		toolSubgroupNotes: 'Notes',
-		toolSubgroupUml: 'UML connectors',
 
 		// Status
 		statusReady: 'Ready',
@@ -260,7 +259,6 @@
 			toolSubgroupArchitecture: 'Архитектура',
 			toolSubgroupDevices: 'Устройства',
 			toolSubgroupNotes: 'Заметки',
-			toolSubgroupUml: 'UML-соединители',
 
 			statusReady: 'Готово',
 			statusLoaded: 'Загружено',

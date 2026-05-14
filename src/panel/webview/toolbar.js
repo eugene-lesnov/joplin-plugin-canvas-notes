@@ -209,8 +209,8 @@
 		};
 	}
 
-	function lineTool(id, subgroup, labelKey, fallback, icon, lineSpec) {
-		return { id, group: 'lines', subgroup, kind: 'line', lineSpec, labelKey, fallback, icon };
+	function lineTool(id, labelKey, fallback, icon, lineSpec) {
+		return { id, group: 'lines', kind: 'line', lineSpec, labelKey, fallback, icon };
 	}
 
 	/**
@@ -282,32 +282,30 @@
 		// Notes / annotations.
 		shape('cardShape',              'card',                 'notes', 'toolCardShape',              'Card'),
 
-		// Lines - basic.
-		lineTool('line',         'basic', 'toolLine',         'Solid line',         ICON_LINE,
+		// Lines.
+		lineTool('line',         'toolLine',         'Solid line',         ICON_LINE,
 			{ type: 'line',  strokeStyle: 'solid',  startArrow: 'none',  endArrow: 'none'  }),
-		lineTool('arrow',        'basic', 'toolArrow',        'Arrow',              ICON_ARROW,
+		lineTool('arrow',        'toolArrow',        'Arrow',              ICON_ARROW,
 			{ type: 'arrow', strokeStyle: 'solid',  startArrow: 'none',  endArrow: 'arrow' }),
-		lineTool('biarrow',      'basic', 'toolBiArrow',      'Bidirectional arrow',ICON_BIARROW,
+		lineTool('biarrow',      'toolBiArrow',      'Bidirectional arrow',ICON_BIARROW,
 			{ type: 'arrow', strokeStyle: 'solid',  startArrow: 'arrow', endArrow: 'arrow' }),
-		lineTool('line-dashed',  'basic', 'toolLineDashed',   'Dashed line',        ICON_LINE_DASHED,
+		lineTool('line-dashed',  'toolLineDashed',   'Dashed line',        ICON_LINE_DASHED,
 			{ type: 'line',  strokeStyle: 'dashed', startArrow: 'none',  endArrow: 'none'  }),
-		lineTool('line-dotted',  'basic', 'toolLineDotted',   'Dotted line',        ICON_LINE_DOTTED,
+		lineTool('line-dotted',  'toolLineDotted',   'Dotted line',        ICON_LINE_DOTTED,
 			{ type: 'line',  strokeStyle: 'dotted', startArrow: 'none',  endArrow: 'none'  }),
-		lineTool('line-thick',   'basic', 'toolLineThick',    'Thick line',         ICON_LINE_THICK,
+		lineTool('line-thick',   'toolLineThick',    'Thick line',         ICON_LINE_THICK,
 			{ type: 'line',  strokeStyle: 'solid',  startArrow: 'none',  endArrow: 'none', strokeWidth: 4 }),
-		lineTool('arrow-dashed', 'basic', 'toolArrowDashed',  'Dashed arrow',       ICON_ARROW_DASHED,
+		lineTool('arrow-dashed', 'toolArrowDashed',  'Dashed arrow',       ICON_ARROW_DASHED,
 			{ type: 'arrow', strokeStyle: 'dashed', startArrow: 'none',  endArrow: 'arrow' }),
-
-		// Lines - UML.
-		lineTool('arrow-inheritance', 'uml', 'toolInheritance', 'Inheritance', ICON_INHERITANCE,
+		lineTool('arrow-inheritance', 'toolInheritance', 'Inheritance', ICON_INHERITANCE,
 			{ type: 'line',  strokeStyle: 'solid',  startArrow: 'none',  endArrow: 'triangle' }),
-		lineTool('arrow-realization', 'uml', 'toolRealization', 'Realization', ICON_REALIZATION,
+		lineTool('arrow-realization', 'toolRealization', 'Realization', ICON_REALIZATION,
 			{ type: 'line',  strokeStyle: 'dashed', startArrow: 'none',  endArrow: 'triangle' }),
-		lineTool('arrow-aggregation', 'uml', 'toolAggregation', 'Aggregation', ICON_AGGREGATION,
+		lineTool('arrow-aggregation', 'toolAggregation', 'Aggregation', ICON_AGGREGATION,
 			{ type: 'line',  strokeStyle: 'solid',  startArrow: 'none',  endArrow: 'diamond-open' }),
-		lineTool('arrow-composition', 'uml', 'toolComposition', 'Composition', ICON_COMPOSITION,
+		lineTool('arrow-composition', 'toolComposition', 'Composition', ICON_COMPOSITION,
 			{ type: 'line',  strokeStyle: 'solid',  startArrow: 'none',  endArrow: 'diamond-filled' }),
-		lineTool('arrow-dependency',  'uml', 'toolDependency',  'Dependency',  ICON_ARROW_DASHED,
+		lineTool('arrow-dependency',  'toolDependency',  'Dependency',  ICON_ARROW_DASHED,
 			{ type: 'arrow', strokeStyle: 'dashed', startArrow: 'none',  endArrow: 'arrow' }),
 
 		// Freehand + text.
@@ -345,11 +343,9 @@
 		architecture:  { key: 'toolSubgroupArchitecture',  fallback: 'Architecture' },
 		devices:       { key: 'toolSubgroupDevices',       fallback: 'Devices' },
 		notes:         { key: 'toolSubgroupNotes',         fallback: 'Notes' },
-		uml:           { key: 'toolSubgroupUml',           fallback: 'UML connectors' },
 	};
 
 	const SUBGROUP_ORDER_SHAPES = ['basic', 'flowchart', 'containers', 'dataDocuments', 'architecture', 'devices', 'notes'];
-	const SUBGROUP_ORDER_LINES = ['basic', 'uml'];
 
 	// ---- DOM helpers ----------------------------------------------------
 
@@ -395,7 +391,8 @@
 	}
 
 	/**
-	 * Builds the popover body: grouped grids of tiles, one per subgroup.
+	 * Builds the popover body. Shapes are split into subgroups with headings;
+	 * lines are rendered as a single flat grid without any group headings.
 	 */
 	function buildDropdownContent(groupId, activeToolId, onPick) {
 		const root = document.createElement('div');
@@ -407,18 +404,27 @@
 		root.appendChild(body);
 
 		const groupTools = TOOLS.filter((tool) => tool.group === groupId);
-		const subgroupOrder = groupId === 'shapes' ? SUBGROUP_ORDER_SHAPES : SUBGROUP_ORDER_LINES;
-		for (const subgroup of subgroupOrder) {
-			const tools = groupTools.filter((tool) => tool.subgroup === subgroup);
-			if (tools.length === 0) continue;
-			const heading = document.createElement('div');
-			heading.className = 'toolbar-popover-heading';
-			const meta = SUBGROUP_LABEL[subgroup] || { fallback: subgroup };
-			heading.textContent = t(meta.key, meta.fallback);
-			body.appendChild(heading);
+
+		if (groupId === 'shapes') {
+			for (const subgroup of SUBGROUP_ORDER_SHAPES) {
+				const tools = groupTools.filter((tool) => tool.subgroup === subgroup);
+				if (tools.length === 0) continue;
+				const heading = document.createElement('div');
+				heading.className = 'toolbar-popover-heading';
+				const meta = SUBGROUP_LABEL[subgroup] || { fallback: subgroup };
+				heading.textContent = t(meta.key, meta.fallback);
+				body.appendChild(heading);
+				const grid = document.createElement('div');
+				grid.className = 'toolbar-popover-grid';
+				for (const tool of tools) {
+					grid.appendChild(renderTile(tool, activeToolId, onPick));
+				}
+				body.appendChild(grid);
+			}
+		} else {
 			const grid = document.createElement('div');
 			grid.className = 'toolbar-popover-grid';
-			for (const tool of tools) {
+			for (const tool of groupTools) {
 				grid.appendChild(renderTile(tool, activeToolId, onPick));
 			}
 			body.appendChild(grid);
