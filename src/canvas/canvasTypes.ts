@@ -30,6 +30,7 @@ export type ShapeType =
 	| 'star'
 	| 'heart'
 	| 'envelope'
+	| 'folder'
 	// Flowchart.
 	| 'terminator'
 	| 'document'
@@ -38,26 +39,26 @@ export type ShapeType =
 	| 'predefinedProcess'
 	| 'delay'
 	| 'offPageConnector'
-	// Containers / data.
-	| 'table'
+	// Containers.
+	| 'container'
 	| 'swimlane'
+	| 'table'
+	// Data / Documents.
 	| 'storedData'
 	| 'punchedTape'
-	// Legacy (no longer in the palette but kept for backward
-	// compatibility with existing canvas files).
-	| 'queue'
+	// Architecture / Infrastructure.
 	| 'server'
+	| 'queue'
 	| 'actor'
-	| 'browser'
-	| 'mobile'
-	| 'laptop'
-	| 'desktop'
-	| 'container'
 	| 'gear'
 	| 'loadBalancer'
 	| 'firewall'
 	| 'lock'
-	| 'folder'
+	// Devices.
+	| 'browser'
+	| 'desktop'
+	| 'laptop'
+	| 'mobile'
 	// Notes / annotations.
 	| 'card'
 	| 'callout'
@@ -71,14 +72,22 @@ export type ShapeType =
  * webview bundle stays standalone).
  */
 const SHAPE_TYPES: readonly ShapeType[] = [
+	// Basic / General.
 	'rectangle', 'roundedRectangle', 'ellipse',
 	'triangle', 'diamond', 'hexagon', 'parallelogram', 'trapezoid',
-	'cloud', 'cylinder', 'star', 'heart', 'envelope',
+	'cloud', 'cylinder', 'star', 'heart', 'envelope', 'folder',
+	// Flowchart.
 	'terminator', 'document', 'multipleDocuments',
 	'manualInput', 'predefinedProcess', 'delay', 'offPageConnector',
-	'table', 'swimlane', 'storedData', 'punchedTape',
-	'queue', 'server', 'actor', 'browser', 'mobile', 'laptop', 'desktop',
-	'container', 'gear', 'loadBalancer', 'firewall', 'lock', 'folder',
+	// Containers.
+	'container', 'swimlane', 'table',
+	// Data / Documents.
+	'storedData', 'punchedTape',
+	// Architecture / Infrastructure.
+	'server', 'queue', 'actor', 'gear', 'loadBalancer', 'firewall', 'lock',
+	// Devices.
+	'browser', 'desktop', 'laptop', 'mobile',
+	// Notes / annotations.
 	'card', 'callout', 'stickyNote',
 ];
 
