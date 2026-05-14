@@ -50,7 +50,12 @@
 	let noteId = null;
 	let resourceId = null;
 
-	let selectedId = null;
+	/**
+	 * Множественное выделение. Set хранит id выбранных элементов;
+	 * порядок добавления соответствует порядку вставки и используется
+	 * как стабильная итерация (например, для primary-выбора).
+	 */
+	let selectedIds = new Set();
 	let activeTool = 'select';
 	let toolbarApi = null;
 
@@ -102,10 +107,36 @@
 		return Math.max(TEXT_FONT_SIZE_MIN, Math.min(TEXT_FONT_SIZE_MAX, Math.round(v)));
 	}
 
+	/**
+	 * Возвращает единственно выделенный text-элемент, либо null.
+	 * При множественном выделении возвращает null - controls размера
+	 * шрифта работают только когда таргет однозначен.
+	 */
 	function getSelectedTextElement() {
-		if (!doc || !selectedId) return null;
-		const el = doc.elements.find((e) => e.id === selectedId);
+		const id = singleSelectedId();
+		if (!doc || !id) return null;
+		const el = doc.elements.find((e) => e.id === id);
 		return (el && el.type === 'text') ? el : null;
+	}
+
+	// --- selection helpers -------------------------------------------------
+
+	/** Возвращает id единственного выделенного элемента или null. */
+	function singleSelectedId() {
+		if (selectedIds.size !== 1) return null;
+		return selectedIds.values().next().value;
+	}
+
+	function hasSelection() { return selectedIds.size > 0; }
+
+	function clearSelection() {
+		if (selectedIds.size === 0) return false;
+		selectedIds = new Set();
+		return true;
+	}
+
+	function setSelectionSingle(id) {
+		selectedIds = new Set([id]);
 	}
 
 	function findTextElement(elementId) {
@@ -285,7 +316,7 @@
 		if (saveBtn) saveBtn.disabled = !doc || !isDirty() || saveState === 'saving';
 
 		const delBtn = $('btn-delete');
-		if (delBtn) delBtn.disabled = !selectedId;
+		if (delBtn) delBtn.disabled = !hasSelection();
 
 		const zoomReset = $('btn-zoom-reset');
 		if (zoomReset) zoomReset.textContent = `${Math.round(zoom * 100)}%`;
@@ -425,7 +456,7 @@
 
 	function addElement(el) {
 		doc = Object.assign({}, doc, { elements: doc.elements.concat([el]) });
-		selectedId = el.id;
+		setSelectionSingle(el.id);
 		markDirty();
 		render();
 		if (activeTool !== 'select' && !C.STICKY_TOOLS.has(activeTool)) {
@@ -436,7 +467,19 @@
 	function deleteElement(id) {
 		if (!id) return;
 		doc = Object.assign({}, doc, { elements: doc.elements.filter((e) => e.id !== id) });
-		if (selectedId === id) selectedId = null;
+		selectedIds.delete(id);
+		markDirty();
+		render();
+	}
+
+	/** Удаляет все выделенные элементы за одну операцию. */
+	function deleteSelectedElements() {
+		if (!hasSelection() || !doc) return;
+		const toDelete = selectedIds;
+		doc = Object.assign({}, doc, {
+			elements: doc.elements.filter((e) => !toDelete.has(e.id)),
+		});
+		selectedIds = new Set();
 		markDirty();
 		render();
 	}
@@ -445,6 +488,20 @@
 		doc = Object.assign({}, doc, {
 			elements: doc.elements.map((e) =>
 				(e.id === elementId ? Transforms.translateElement(e, dx, dy) : e)),
+		});
+	}
+
+	/**
+	 * Групповое перемещение: смещает каждый элемент из множества id на
+	 * (dx, dy). Один проход по списку элементов вместо N - так быстрее
+	 * и проще, чем дёргать applyTranslate в цикле.
+	 */
+	function applyTranslateMany(ids, dx, dy) {
+		if (!doc || !ids || ids.length === 0) return;
+		const set = ids instanceof Set ? ids : new Set(ids);
+		doc = Object.assign({}, doc, {
+			elements: doc.elements.map((e) =>
+				(set.has(e.id) ? Transforms.translateElement(e, dx, dy) : e)),
 		});
 	}
 
@@ -505,7 +562,7 @@
 
 	function render() {
 		if (!doc) return;
-		Renderer.renderDocument(svg(), doc, selectedId);
+		Renderer.renderDocument(svg(), doc, selectedIds);
 		applyZoom();
 		updateToolbar();
 		// renderDocument пересоздаёт все SVG-узлы. Ссылки в hiddenNodes
@@ -520,7 +577,7 @@
 	}
 
 	function refreshSelection() {
-		Renderer.drawSelection(svg(), doc, selectedId);
+		Renderer.drawSelection(svg(), doc, selectedIds);
 		updateToolbar();
 	}
 
@@ -592,8 +649,7 @@
 		const node = svg();
 		if (node) node.setAttribute('data-tool', toolId);
 		if (toolbarApi) toolbarApi.setActive(toolId);
-		if (toolId !== 'select' && selectedId !== null) {
-			selectedId = null;
+		if (toolId !== 'select' && clearSelection()) {
 			refreshSelection();
 		}
 	}
@@ -613,8 +669,11 @@
 
 		if (activeTool !== 'select') { node.style.cursor = ''; return; }
 
-		if (selectedId) {
-			const sel = doc && doc.elements.find((e) => e.id === selectedId);
+		// Resize handles доступны только когда выбран ровно один элемент;
+		// при множественном выделении ручек нет, поэтому проверять не нужно.
+		const onlyId = singleSelectedId();
+		if (onlyId) {
+			const sel = doc && doc.elements.find((e) => e.id === onlyId);
 			if (sel && Handles.pickElementHandleAt(sel, p)) {
 				node.style.cursor = ''; // handle has its own inline cursor
 				return;
@@ -828,9 +887,12 @@
 	}
 
 	function handleSelectPointerDown(evt, p) {
-		// 1) handle hit?
-		if (selectedId) {
-			const sel = doc.elements.find((e) => e.id === selectedId);
+		const additive = evt.shiftKey || evt.ctrlKey || evt.metaKey;
+
+		// 1) handle hit? Ручки resize живут только при single-selection.
+		const onlyId = singleSelectedId();
+		if (onlyId) {
+			const sel = doc.elements.find((e) => e.id === onlyId);
 			const h = sel && Handles.pickElementHandleAt(sel, p);
 			if (h) {
 				dragState = {
@@ -844,23 +906,63 @@
 				return;
 			}
 		}
+
 		// 2) element hit?
 		const hit = pickElementAt(p);
 		if (hit) {
-			selectedId = hit.id;
+			if (additive) {
+				// Shift/Ctrl toggle: в selection уже есть -> убираем,
+				// нет -> добавляем. Drag-move в toggle-режиме не запускаем,
+				// иначе пользователь случайно сдвинет всё при тоггле.
+				if (selectedIds.has(hit.id)) selectedIds.delete(hit.id);
+				else selectedIds.add(hit.id);
+				refreshSelection();
+				return;
+			}
+			// Обычный клик: если элемент уже в selection (в т.ч. множественном),
+			// не сбрасываем selection - это позволит двигать группу целиком.
+			// Иначе — резет + выбор hit.id.
+			if (!selectedIds.has(hit.id)) setSelectionSingle(hit.id);
 			dragState = {
 				mode: 'maybe-move',
 				elementId: hit.id,
+				moveIds: Array.from(selectedIds),
 				startDocX: p.x, startDocY: p.y,
 				startClientX: evt.clientX, startClientY: evt.clientY,
 			};
 			const node = svg();
 			if (node) node.style.cursor = 'grabbing';
 			refreshSelection();
-		} else if (selectedId !== null) {
-			selectedId = null;
-			refreshSelection();
+			return;
 		}
+
+		// 3) Empty canvas: начинаем drag-selection прямоугольник.
+		// Без модификатора - сразу сбрасываем текущее selection.
+		if (!additive && clearSelection()) refreshSelection();
+		dragState = {
+			mode: 'multi-selecting',
+			additive,
+			baseIds: additive ? new Set(selectedIds) : new Set(),
+			start: p,
+			current: p,
+		};
+		Renderer.showSelectionBox(svg(), p, p);
+	}
+
+	/**
+	 * Собирает id элементов, которые визуально пересекаются с box.
+	 * Для линий/стрелок и freehand - точный segment-intersect через
+	 * Geometry.elementIntersectsBox, иначе диагональные стрелки
+	 * ловятся по углам bbox, которые визуально пусты. Для
+	 * фигур/карточек bbox совпадает с видимыми границами.
+	 */
+	function elementsIntersectingBox(box) {
+		if (!doc) return [];
+		const ids = [];
+		for (const e of doc.elements) {
+			if (Geometry.elementIntersectsBox(e, box)) ids.push(e.id);
+		}
+		return ids;
 	}
 
 	function onPointerMove(evt) {
@@ -897,8 +999,17 @@
 				dragState.startDocX = p.x;
 				dragState.startDocY = p.y;
 				dragState.mode = 'moving';
-				applyTranslate(dragState.elementId, dx, dy);
+				const ids = dragState.moveIds && dragState.moveIds.length > 0
+					? dragState.moveIds
+					: [dragState.elementId];
+				if (ids.length === 1) applyTranslate(ids[0], dx, dy);
+				else applyTranslateMany(ids, dx, dy);
 				render();
+				return;
+			}
+			case 'multi-selecting': {
+				dragState.current = p;
+				Renderer.showSelectionBox(svg(), dragState.start, p);
 				return;
 			}
 			case 'resizing':
@@ -947,6 +1058,25 @@
 			case 'resizing':
 				markDirty();
 				return;
+			case 'multi-selecting': {
+				Renderer.clearSelectionBox(svg());
+				const x = Math.min(finished.start.x, finished.current.x);
+				const y = Math.min(finished.start.y, finished.current.y);
+				const w = Math.abs(finished.current.x - finished.start.x);
+				const h = Math.abs(finished.current.y - finished.start.y);
+				// Слишком маленький box трактуем как click-on-empty:
+				// selection уже очищен, больше ничего не делаем.
+				if (w < C.DRAG_THRESHOLD_PX && h < C.DRAG_THRESHOLD_PX) {
+					refreshSelection();
+					return;
+				}
+				const hits = elementsIntersectingBox({ x, y, w, h });
+				const next = new Set(finished.baseIds || []);
+				for (const id of hits) next.add(id);
+				selectedIds = next;
+				refreshSelection();
+				return;
+			}
 			case 'segment-drawing': {
 				TempPreview.clearSegment(svg());
 				const dx = finished.current.x - finished.start.x;
@@ -1088,16 +1218,15 @@
 		}
 
 		if (evt.key === 'Delete' || evt.key === 'Backspace') {
-			if (selectedId) {
-				deleteElement(selectedId);
+			if (hasSelection()) {
+				deleteSelectedElements();
 				evt.preventDefault();
 			}
 			return;
 		}
 		if (evt.key === 'Escape') {
 			ContextMenu.hide();
-			if (selectedId !== null) {
-				selectedId = null;
+			if (clearSelection()) {
 				refreshSelection();
 			} else if (activeTool !== 'select') {
 				setActiveTool('select');
@@ -1120,19 +1249,36 @@
 		evt.preventDefault();
 		const p = clientToDoc(evt);
 		const hit = pickElementAt(p);
+		// Если попали правой в элемент из текущего selection -
+		// оставляем selection как есть и показываем group-menu.
+		// Иначе: перебрасываем выделение на hit (или сбрасываем).
+		let groupContext = false;
 		if (hit) {
-			selectedId = hit.id;
+			if (!selectedIds.has(hit.id)) {
+				setSelectionSingle(hit.id);
+			}
+			groupContext = selectedIds.size > 1;
 			refreshSelection();
 			updateToolbar();
 		}
-		ContextMenu.show(evt.clientX, evt.clientY, buildContextMenuItems(hit));
+		ContextMenu.show(evt.clientX, evt.clientY, buildContextMenuItems(hit, groupContext));
 	}
 
-	function buildContextMenuItems(hit) {
+	function buildContextMenuItems(hit, groupContext) {
 		if (!hit) {
 			return [
 				{ label: t('ctxAddNote', 'Add note/task...'), action: onAddNoteClick },
 				{ label: t('ctxResetZoom', 'Reset zoom'), action: () => setZoom(1) },
+			];
+		}
+		if (groupContext) {
+			// Групповое меню: доступны только действия, осмысленные
+			// для набора: удалить всё + z-order всего набора.
+			const groupIds = Array.from(selectedIds);
+			return [
+				{ label: t('ctxBringToFront', 'Bring to front'), action: () => zOrderMany(groupIds, 'front') },
+				{ label: t('ctxSendToBack', 'Send to back'), action: () => zOrderMany(groupIds, 'back') },
+				{ label: t('ctxDelete', 'Delete'), action: () => deleteSelectedElements() },
 			];
 		}
 		const items = [];
@@ -1143,6 +1289,41 @@
 		items.push({ label: t('ctxSendToBack', 'Send to back'),  action: () => zOrder(hit.id, 'back') });
 		items.push({ label: t('ctxDelete', 'Delete'), action: () => deleteElement(hit.id) });
 		return items;
+	}
+
+	/**
+	 * Перемещает набор элементов на передний/задний план блоком.
+	 * Рассчитывает базовый z один раз и назначает последовательные
+	 * значения — к верху/низу относительный порядок внутри группы
+	 * сохраняется.
+	 */
+	function zOrderMany(ids, where) {
+		if (!doc || !ids || ids.length === 0) return;
+		const set = ids instanceof Set ? ids : new Set(ids);
+		const zs = doc.elements.map((e) => e.z);
+		const maxZ = zs.length ? Math.max.apply(null, zs) : 0;
+		const minZ = zs.length ? Math.min.apply(null, zs) : 0;
+
+		// Составляем упорядоченный список выбранных по текущему z,
+		// чтобы внутренний порядок группы не перемешался.
+		const selected = doc.elements
+			.filter((e) => set.has(e.id))
+			.slice()
+			.sort((a, b) => a.z - b.z);
+		const zMap = new Map();
+		if (where === 'front') {
+			let base = maxZ + 1;
+			for (const e of selected) zMap.set(e.id, base++);
+		} else {
+			let base = minZ - selected.length;
+			for (const e of selected) zMap.set(e.id, base++);
+		}
+		doc = Object.assign({}, doc, {
+			elements: doc.elements.map((e) =>
+				(zMap.has(e.id) ? Object.assign({}, e, { z: zMap.get(e.id) }) : e)),
+		});
+		markDirty();
+		render();
 	}
 
 	async function openCardLink(card) {
@@ -1193,7 +1374,7 @@
 				noteId = message.noteId;
 				resourceId = message.resourceId;
 				doc = message.doc;
-				selectedId = null;
+				selectedIds = new Set();
 				saveState = 'idle';
 				showError(null);
 				setStatus(t('statusLoaded', 'Loaded'), 'idle');
@@ -1244,7 +1425,7 @@
 	}
 
 	function onDeleteClick() {
-		if (selectedId) deleteElement(selectedId);
+		if (hasSelection()) deleteSelectedElements();
 	}
 
 	function onAddNoteClick() {
@@ -1906,8 +2087,7 @@
 			activeTool = toolId;
 			const node = svg();
 			if (node) node.setAttribute('data-tool', toolId);
-			if (toolId !== 'select' && selectedId !== null) {
-				selectedId = null;
+			if (toolId !== 'select' && clearSelection()) {
 				refreshSelection();
 			}
 		});

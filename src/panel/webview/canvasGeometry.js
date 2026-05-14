@@ -188,6 +188,77 @@
 			|| (isShapeType(e.type) && hitTestShapeLabel(e, px, py));
 	}
 
+	/**
+	 * Пересечение AABB двух прямоугольников (включительно по границе).
+	 * Прямоугольники в форме { x, y, w, h }.
+	 */
+	function rectsIntersect(a, b) {
+		return a.x <= b.x + b.w && a.x + a.w >= b.x
+			&& a.y <= b.y + b.h && a.y + a.h >= b.y;
+	}
+
+	/** Точка внутри прямоугольника (включая границы). */
+	function pointInRect(px, py, r) {
+		return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
+	}
+
+	/**
+	 * Пересечение двух отрезков. Стандартная формула через
+	 * ориентированное выражение (cross-product). Берём <= чтобы
+	 * касание в точке считалось пересечением.
+	 */
+	function segmentsIntersect(a, b, c, d) {
+		const d1 = (d.x - c.x) * (a.y - c.y) - (d.y - c.y) * (a.x - c.x);
+		const d2 = (d.x - c.x) * (b.y - c.y) - (d.y - c.y) * (b.x - c.x);
+		const d3 = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+		const d4 = (b.x - a.x) * (d.y - a.y) - (b.y - a.y) * (d.x - a.x);
+		if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0))
+			&& ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))) return true;
+		// Коллинеарные случаи обрабатываются выше по bbox-rectsIntersect,
+		// здесь явных веток не нужно.
+		return false;
+	}
+
+	/** Пересечение отрезка [p1, p2] с прямоугольником r. */
+	function segmentIntersectsRect(p1, p2, r) {
+		if (pointInRect(p1.x, p1.y, r) || pointInRect(p2.x, p2.y, r)) return true;
+		const tl = { x: r.x, y: r.y };
+		const tr = { x: r.x + r.w, y: r.y };
+		const br = { x: r.x + r.w, y: r.y + r.h };
+		const bl = { x: r.x, y: r.y + r.h };
+		return segmentsIntersect(p1, p2, tl, tr)
+			|| segmentsIntersect(p1, p2, tr, br)
+			|| segmentsIntersect(p1, p2, br, bl)
+			|| segmentsIntersect(p1, p2, bl, tl);
+	}
+
+	/**
+	 * Точный marquee-intersect по типу элемента:
+	 *   - line/arrow: пересечение отрезка с box;
+	 *   - freehand: пересечение любого сегмента полилинии с box;
+	 *   - остальные: пересечение bbox с box (это совпадает с
+	 *     визуальными границами фигур/карточек/текста).
+	 * Быстрый отказ по bbox перед тяжёлыми проверками.
+	 */
+	function elementIntersectsBox(e, box) {
+		const b = elementBBox(e);
+		if (!b) return false;
+		if (!rectsIntersect(b, box)) return false;
+		if (e.type === 'arrow' || e.type === 'line') {
+			return segmentIntersectsRect(e.from, e.to, box);
+		}
+		if (e.type === 'freehand') {
+			const pts = e.points || [];
+			if (pts.length === 0) return false;
+			if (pts.length === 1) return pointInRect(pts[0].x, pts[0].y, box);
+			for (let i = 1; i < pts.length; i++) {
+				if (segmentIntersectsRect(pts[i - 1], pts[i], box)) return true;
+			}
+			return false;
+		}
+		return true;
+	}
+
 	window.CanvasNotes = window.CanvasNotes || {};
 	window.CanvasNotes.Geometry = {
 		elementBBox,
@@ -196,5 +267,8 @@
 		hitTest,
 		hitTestLineLabel,
 		hitTestShapeLabel,
+		rectsIntersect,
+		segmentIntersectsRect,
+		elementIntersectsBox,
 	};
 })();

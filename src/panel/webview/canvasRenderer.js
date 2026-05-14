@@ -741,7 +741,7 @@
 	 * Each rendered node receives `data-element-id`. Selection lives in a
 	 * separate top-most layer so it can be redrawn cheaply.
 	 */
-	function renderDocument(svg, doc, selectedId) {
+	function renderDocument(svg, doc, selectedIds) {
 		while (svg.firstChild) svg.removeChild(svg.firstChild);
 
 		setAttrs(svg, {
@@ -775,38 +775,70 @@
 		const overlay = el('g', { id: SELECTION_LAYER_ID });
 		svg.appendChild(overlay);
 
-		drawSelection(svg, doc, selectedId);
+		drawSelection(svg, doc, selectedIds);
 	}
 
-	/** Repaints the selection overlay only; full render is not required. */
-	function drawSelection(svg, doc, selectedId) {
+	/**
+	 * Repaints the selection overlay only; full render is not required.
+	 * `selection` accepts a Set/Array of ids or a single id (back-compat).
+	 */
+	function drawSelection(svg, doc, selection) {
 		const overlay = svg.querySelector(`#${SELECTION_LAYER_ID}`);
 		if (!overlay) return;
 		while (overlay.firstChild) overlay.removeChild(overlay.firstChild);
 
 		drawCanvasHandles(overlay, doc);
 
-		if (!selectedId) return;
-		const item = (doc.elements || []).find((e) => e.id === selectedId);
-		if (!item) return;
+		const ids = normalizeSelection(selection);
+		if (ids.length === 0) return;
 
-		// Outline (skip for thin lines/arrows where it looks bad).
-		const isThin = item.type === 'arrow' || item.type === 'line';
-		if (!isThin) {
+		const elements = doc.elements || [];
+		const items = [];
+		for (const id of ids) {
+			const item = elements.find((e) => e.id === id);
+			if (item) items.push(item);
+		}
+		if (items.length === 0) return;
+
+		const isMulti = items.length > 1;
+		for (const item of items) {
+			const isThin = item.type === 'arrow' || item.type === 'line';
+			// Для тонких элементов при single-selection outline не нужен -
+			// endpoint-handles уже хорошо видны. При multi-selection ручек
+			// нет, поэтому рисуем bbox с паддингом — иначе линия/стрелка
+			// попавшая в группу выглядит не выбранной.
+			if (isThin && !isMulti) continue;
 			const b = Geometry.elementBBox(item);
-			if (item.type === 'freehand' && (b.w === 0 || b.h === 0)) {
-				// freehand can collapse to a single point; just skip the outline.
-			} else {
-				const pad = item.type === 'freehand' ? 4 : 0;
-				overlay.appendChild(el('rect', {
-					x: b.x - pad, y: b.y - pad,
-					width: b.w + pad * 2, height: b.h + pad * 2,
-					class: 'selection-outline',
-				}));
-			}
+			if (item.type === 'freehand' && (b.w === 0 || b.h === 0)) continue;
+			// Отступ рамки от самой фигуры: при pad=0 толстый stroke
+			// фигуры визуально перекрывает тонкий пунктир рамки
+			// (оба цвета близки), поэтому выносим её наружу.
+			const pad = item.type === 'freehand' ? 4 : 3;
+			overlay.appendChild(el('rect', {
+				x: b.x - pad, y: b.y - pad,
+				width: b.w + pad * 2, height: b.h + pad * 2,
+				class: 'selection-outline',
+			}));
 		}
 
-		drawElementHandles(overlay, item);
+		// Resize handles only make sense for a single selected element -
+		// drawing them for every member of a multi-selection would clutter
+		// the screen and the per-handle drag is undefined for groups.
+		if (items.length === 1) {
+			drawElementHandles(overlay, items[0]);
+		}
+	}
+
+	/**
+	 * Accepts a Set, Array, single string id, or null/undefined and
+	 * returns a plain Array of string ids.
+	 */
+	function normalizeSelection(selection) {
+		if (!selection) return [];
+		if (typeof selection === 'string') return [selection];
+		if (selection instanceof Set) return Array.from(selection);
+		if (Array.isArray(selection)) return selection.slice();
+		return [];
 	}
 
 	function drawElementHandles(overlay, item) {
@@ -859,11 +891,45 @@
 		}
 	}
 
+	/**
+	 * Renders or updates the dashed selection-box rectangle used while
+	 * the user is drag-selecting on empty canvas. `from`/`to` are document
+	 * points; passing null/undefined or anywhere with an existing svg
+	 * with no overlay is a no-op.
+	 */
+	const SELECTION_BOX_ID = 'selection-box';
+	function showSelectionBox(svg, from, to) {
+		const overlay = svg ? svg.querySelector(`#${SELECTION_LAYER_ID}`) : null;
+		if (!overlay || !from || !to) return;
+		const x = Math.min(from.x, to.x);
+		const y = Math.min(from.y, to.y);
+		const w = Math.abs(to.x - from.x);
+		const h = Math.abs(to.y - from.y);
+		let node = overlay.querySelector(`#${SELECTION_BOX_ID}`);
+		if (!node) {
+			node = el('rect', { id: SELECTION_BOX_ID, class: 'selection-box' });
+			overlay.appendChild(node);
+		}
+		node.setAttribute('x', String(x));
+		node.setAttribute('y', String(y));
+		node.setAttribute('width', String(w));
+		node.setAttribute('height', String(h));
+	}
+
+	function clearSelectionBox(svg) {
+		const overlay = svg ? svg.querySelector(`#${SELECTION_LAYER_ID}`) : null;
+		if (!overlay) return;
+		const node = overlay.querySelector(`#${SELECTION_BOX_ID}`);
+		if (node && node.parentNode) node.parentNode.removeChild(node);
+	}
+
 	window.CanvasNotes = window.CanvasNotes || {};
 	window.CanvasNotes.Renderer = {
 		SVG_NS,
 		renderDocument,
 		drawSelection,
+		showSelectionBox,
+		clearSelectionBox,
 		// Geometry helpers re-exported for backwards compatibility with
 		// existing canvasEditor.js callers.
 		elementBBox: Geometry ? Geometry.elementBBox : null,

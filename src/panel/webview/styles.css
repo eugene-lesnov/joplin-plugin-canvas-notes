@@ -442,6 +442,16 @@ html, body {
 	pointer-events: none;
 }
 
+/* drag-selection rectangle (marquee) drawn on the selection overlay. */
+.selection-box {
+	fill: #4a90e2;
+	fill-opacity: 0.12;
+	stroke: #4a90e2;
+	stroke-width: 1;
+	stroke-dasharray: 4 3;
+	pointer-events: none;
+}
+
 .selection-handle {
 	fill: #ffffff;
 	stroke: #4a90e2;
