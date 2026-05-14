@@ -63,18 +63,17 @@
 		const token = ++lastQueryToken;
 		const empty = $('picker-empty');
 		const results = $('picker-results');
-		if (!query.trim()) {
+		const trimmed = (query || '').trim();
+		if (!trimmed) {
 			items = [];
 			results.innerHTML = '';
 			empty.hidden = true;
 			return;
 		}
-		// Joplin's search endpoint searches title+body by default. We want
-		// title-only matching, which is requested via the `title:` field
-		// modifier. We also append a wildcard so partial matches work for
-		// queries shorter than a full word.
-		const joplinQuery = buildTitleQuery(query);
-		const res = await postMessage({ type: 'searchNotes', query: joplinQuery });
+		// Send the raw user query - the backend builds the proper Joplin
+		// search expression and handles the fallback to the recent-notes
+		// list when FTS returns nothing (e.g. for freshly created notes).
+		const res = await postMessage({ type: 'searchNotes', query: trimmed });
 		// Out-of-order safeguard: ignore stale responses.
 		if (token !== lastQueryToken) return;
 		const list = (res && res.ok && Array.isArray(res.items)) ? res.items : [];
@@ -170,29 +169,6 @@
 			if (activeIndex >= 0) choose(activeIndex);
 			evt.preventDefault();
 		}
-	}
-
-	/**
-	 * Builds a Joplin search query that matches title only. We escape
-	 * Joplin search operators that could otherwise be misinterpreted, then
-	 * wrap the whole phrase in quotes if it contains whitespace, and add
-	 * a wildcard for prefix matching.
-	 *
-	 * Joplin syntax used:
-	 *   title:term     - title-only field filter
-	 *   title:"two words" - quoted multi-word phrase
-	 *   trailing *     - wildcard
-	 */
-	function buildTitleQuery(raw) {
-		const q = (raw || '').trim();
-		if (!q) return '';
-		// Strip characters that Joplin's parser treats as operators inside a phrase.
-		const safe = q.replace(/["]/g, '').trim();
-		if (!safe) return '';
-		if (/\s/.test(safe)) {
-			return `title:"${safe}"*`;
-		}
-		return `title:${safe}*`;
 	}
 
 	async function postMessage(message) {
