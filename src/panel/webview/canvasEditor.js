@@ -66,6 +66,22 @@
 	/** Drag state for select/move and arrow drawing. */
 	let dragState = null;
 
+	/**
+	 * Внутренний буфер копирования. Хранит глубокие копии
+	 * элементов с оригинальными id (регенерируются при вставке).
+	 * null означает пустой буфер. Состояние переживает смену
+	 * выделения, но сбрасывается при загрузке другого документа.
+	 */
+	let clipboard = null;
+
+	/**
+	 * Последняя известная позиция курсора в документных координатах.
+	 * Обновляется в onPointerMove. Используется для Ctrl+V паста -
+	 * элементы встают в точку, над которой пользователь видит курсор.
+	 * null - курсор ещё не находился над холстом.
+	 */
+	let lastPointerDoc = null;
+
 	/** True while space is held - enables temporary pan with primary button. */
 	let spaceDown = false;
 
@@ -482,6 +498,119 @@
 		selectedIds = new Set();
 		markDirty();
 		render();
+	}
+
+	// --- clipboard (internal copy/paste) -----------------------------------
+
+	/**
+	 * Смещение по умолчанию при пасте без anchor (напр. Ctrl+V
+	 * без известной позиции курсора). Подбирается так, чтобы новые
+	 * элементы были визуально различимы и не полностью перекрывали
+	 * оригиналы.
+	 */
+	const PASTE_DEFAULT_OFFSET = 16;
+
+	function clipboardHasContent() {
+		return !!(clipboard && clipboard.elements && clipboard.elements.length > 0);
+	}
+
+	/**
+	 * Копирует выбранные элементы в внутренний буфер. Делает
+	 * deep-copy через JSON, т.к. все элементы - plain-data без функций
+	 * и циклов. Оригинальные элементы не трогаются.
+	 */
+	function copySelectionToClipboard() {
+		if (!doc || !hasSelection()) return false;
+		const picked = doc.elements
+			.filter((e) => selectedIds.has(e.id))
+			.slice()
+			.sort((a, b) => a.z - b.z); // сохраняем относительный порядок в буфере
+		if (picked.length === 0) return false;
+		clipboard = { elements: JSON.parse(JSON.stringify(picked)) };
+		return true;
+	}
+
+	/**
+	 * Рассчитывает bbox группы элементов в документных координатах.
+	 * Нужен для позиционирования копии относительно якоря.
+	 */
+	function elementsBBox(elements) {
+		let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+		for (const e of elements) {
+			const b = Geometry.elementBBox(e);
+			if (!b) continue;
+			if (b.x < minX) minX = b.x;
+			if (b.y < minY) minY = b.y;
+			if (b.x + b.w > maxX) maxX = b.x + b.w;
+			if (b.y + b.h > maxY) maxY = b.y + b.h;
+		}
+		if (!Number.isFinite(minX)) return null;
+		return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+	}
+
+	/**
+	 * Сдвигает элемент на (dx, dy) на месте (in-place). Используется
+	 * только на свеже клонированных из clipboard данных - в doc.elements
+	 * явно попадает только результат, оригиналы остаются нетронутыми.
+	 */
+	function translateClonedElement(e, dx, dy) {
+		if (e.type === 'arrow' || e.type === 'line') {
+			e.from = { x: e.from.x + dx, y: e.from.y + dy };
+			e.to = { x: e.to.x + dx, y: e.to.y + dy };
+			return;
+		}
+		if (e.type === 'freehand') {
+			e.points = (e.points || []).map((p) => ({ x: p.x + dx, y: p.y + dy }));
+			return;
+		}
+		// shapes / cards / text: все имеют x, y.
+		e.x = (e.x || 0) + dx;
+		e.y = (e.y || 0) + dy;
+	}
+
+	/**
+	 * Вставляет все элементы из буфера. Каждый получает новый id и
+	 * свежий z (поверх всех существующих), внутренний порядок
+	 * группы сохраняется.
+	 *
+	 * `anchorDoc`: точка, в которую попадёт центр bbox клонированной
+	 * группы. null - берём исходные координаты + стандартный сдвиг.
+	 */
+	function pasteFromClipboard(anchorDoc) {
+		if (!doc || !clipboardHasContent()) return false;
+		const src = clipboard.elements;
+		const cloned = JSON.parse(JSON.stringify(src));
+
+		// Рассчитываем смещение: если anchor известен - центр bbox
+		// копии попадает в anchor. Иначе - фиксированный сдвиг
+		// вниз/вправо, чтобы копии не лежали ровно на оригиналах.
+		let dx = PASTE_DEFAULT_OFFSET;
+		let dy = PASTE_DEFAULT_OFFSET;
+		if (anchorDoc) {
+			const bbox = elementsBBox(cloned);
+			if (bbox) {
+				dx = anchorDoc.x - (bbox.x + bbox.w / 2);
+				dy = anchorDoc.y - (bbox.y + bbox.h / 2);
+			}
+		}
+
+		// Новые id + z. z идёт пачкой поверх всех существующих элементов,
+		// с сохранением внутреннего порядка (буфер уже отсортирован).
+		const baseZ = nextZ();
+		const newIds = [];
+		for (let i = 0; i < cloned.length; i++) {
+			const e = cloned[i];
+			e.id = Factories.newId();
+			e.z = baseZ + i;
+			translateClonedElement(e, dx, dy);
+			newIds.push(e.id);
+		}
+
+		doc = Object.assign({}, doc, { elements: doc.elements.concat(cloned) });
+		selectedIds = new Set(newIds);
+		markDirty();
+		render();
+		return true;
 	}
 
 	function applyTranslate(elementId, dx, dy) {
@@ -966,11 +1095,13 @@
 	}
 
 	function onPointerMove(evt) {
+		const pHover = clientToDoc(evt);
+		lastPointerDoc = pHover;
 		if (!dragState) {
-			updateHoverCursor(clientToDoc(evt));
+			updateHoverCursor(pHover);
 			return;
 		}
-		const p = clientToDoc(evt);
+		const p = pHover;
 
 		switch (dragState.mode) {
 			case 'panning': {
@@ -1224,6 +1355,25 @@
 			}
 			return;
 		}
+
+		// Ctrl/Cmd+C / Ctrl/Cmd+V. Не выходим по isEditable - проверка выше
+		// уже сработала. Работают только на холсте.
+		if ((evt.ctrlKey || evt.metaKey) && (evt.key === 'c' || evt.key === 'C')) {
+			if (hasSelection()) {
+				copySelectionToClipboard();
+				evt.preventDefault();
+			}
+			return;
+		}
+		if ((evt.ctrlKey || evt.metaKey) && (evt.key === 'v' || evt.key === 'V')) {
+			if (clipboardHasContent()) {
+				// Для Ctrl+V якорь - последняя позиция курсора над холстом
+				// (если есть). Иначе fallback на стандартный сдвиг внутри paste.
+				pasteFromClipboard(lastPointerDoc);
+				evt.preventDefault();
+			}
+			return;
+		}
 		if (evt.key === 'Escape') {
 			ContextMenu.hide();
 			if (clearSelection()) {
@@ -1261,21 +1411,37 @@
 			refreshSelection();
 			updateToolbar();
 		}
+		// Сохраняем doc-point правого клика: он будет якорем для Paste,
+		// чтобы вставка появилась рядом с курсором.
+		contextMenuPasteAnchor = p;
 		ContextMenu.show(evt.clientX, evt.clientY, buildContextMenuItems(hit, groupContext));
 	}
+
+	/**
+	 * Документная точка последнего правого клика. Используется
+	 * действием Paste из контекстного меню после клика по пункту
+	 * (в этот момент evt уже недоступен).
+	 */
+	let contextMenuPasteAnchor = null;
 
 	function buildContextMenuItems(hit, groupContext) {
 		if (!hit) {
 			return [
 				{ label: t('ctxAddNote', 'Add note/task...'), action: onAddNoteClick },
+				{
+					label: t('ctxPaste', 'Paste'),
+					disabled: !clipboardHasContent(),
+					action: () => pasteFromClipboard(contextMenuPasteAnchor),
+				},
 				{ label: t('ctxResetZoom', 'Reset zoom'), action: () => setZoom(1) },
 			];
 		}
 		if (groupContext) {
 			// Групповое меню: доступны только действия, осмысленные
-			// для набора: удалить всё + z-order всего набора.
+			// для набора: copy + z-order всего набора + delete всего.
 			const groupIds = Array.from(selectedIds);
 			return [
+				{ label: t('ctxCopy', 'Copy'), action: () => copySelectionToClipboard() },
 				{ label: t('ctxBringToFront', 'Bring to front'), action: () => zOrderMany(groupIds, 'front') },
 				{ label: t('ctxSendToBack', 'Send to back'), action: () => zOrderMany(groupIds, 'back') },
 				{ label: t('ctxDelete', 'Delete'), action: () => deleteSelectedElements() },
@@ -1285,6 +1451,7 @@
 		if (hit.type === 'noteCard' || hit.type === 'todoCard') {
 			items.push({ label: t('ctxOpenLinkedNote', 'Open linked note'), action: () => openCardLink(hit) });
 		}
+		items.push({ label: t('ctxCopy', 'Copy'), action: () => copySelectionToClipboard() });
 		items.push({ label: t('ctxBringToFront', 'Bring to front'), action: () => zOrder(hit.id, 'front') });
 		items.push({ label: t('ctxSendToBack', 'Send to back'),  action: () => zOrder(hit.id, 'back') });
 		items.push({ label: t('ctxDelete', 'Delete'), action: () => deleteElement(hit.id) });
@@ -1375,6 +1542,11 @@
 				resourceId = message.resourceId;
 				doc = message.doc;
 				selectedIds = new Set();
+				// Новый документ - буфер и якоря вставки из предыдущего
+				// контекста больше не имеют смысла.
+				clipboard = null;
+				lastPointerDoc = null;
+				contextMenuPasteAnchor = null;
 				saveState = 'idle';
 				showError(null);
 				setStatus(t('statusLoaded', 'Loaded'), 'idle');

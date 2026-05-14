@@ -145,6 +145,8 @@
 		ctxOpenLinkedNote: 'Open linked note',
 		ctxBringToFront: 'Bring to front',
 		ctxSendToBack: 'Send to back',
+		ctxCopy: 'Copy',
+		ctxPaste: 'Paste',
 		ctxDelete: 'Delete',
 
 		// Prompt modal
@@ -279,6 +281,8 @@
 			ctxOpenLinkedNote: 'Открыть связанную заметку',
 			ctxBringToFront: 'На передний план',
 			ctxSendToBack: 'На задний план',
+			ctxCopy: 'Копировать',
+			ctxPaste: 'Вставить',
 			ctxDelete: 'Удалить',
 
 			promptCancel: 'Отмена',

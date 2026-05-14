@@ -432,6 +432,13 @@ html, body {
 .ctx-item:hover {
 	background: #e8f0fe;
 }
+.ctx-item.is-disabled {
+	color: #9aa3ad;
+	cursor: default;
+}
+.ctx-item.is-disabled:hover {
+	background: transparent;
+}
 
 /* selection overlay rectangle around the selected element */
 .selection-outline {

@@ -14,15 +14,17 @@
 
 	let currentEl = null;
 
-	function buildItem(label, action) {
+	function buildItem(it) {
 		const item = document.createElement('div');
 		item.className = 'ctx-item';
-		item.textContent = label;
+		if (it.disabled) item.classList.add('is-disabled');
+		item.textContent = it.label;
 		item.addEventListener('mousedown', (e) => {
 			e.preventDefault();
 			e.stopPropagation();
+			if (it.disabled) return;
 			hide();
-			action();
+			it.action();
 		});
 		return item;
 	}
@@ -33,7 +35,7 @@
 		menu.className = 'ctx-menu';
 		menu.style.left = `${clientX}px`;
 		menu.style.top = `${clientY}px`;
-		for (const it of items) menu.appendChild(buildItem(it.label, it.action));
+		for (const it of items) menu.appendChild(buildItem(it));
 
 		document.body.appendChild(menu);
 		currentEl = menu;
